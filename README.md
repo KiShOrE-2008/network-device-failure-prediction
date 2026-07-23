@@ -101,7 +101,7 @@ The `src/eda.py` script reads the dataset and automatically performs univariate,
 
 Features must undergo transformations before feeding into linear or ensemble models:
 
-- **Categorical Columns**: `Device_Type` is passed through for models that handle discrete features natively or via manual pipeline configurations.
+- **Categorical Columns**: `Device_Type` is encoded using a `OneHotEncoder(drop="first", sparse_output=False)` to safely convert discrete classes (`Router`/`Switch`) into numeric values for downstream classifiers.
 - **Numerical Columns**: Scaled using a `StandardScaler` to bring variance and mean to a uniform scale ($\mu=0, \sigma^2=1$):
   $$z = \frac{x - \mu}{\sigma}$$
 - **Composition**: Handled elegantly via `sklearn.compose.ColumnTransformer`, ensuring **no target leakage** occurs during train-test splitting.
@@ -169,8 +169,11 @@ python src/eda.py
 # Step 3: Run model training, comparison and save the best model
 python src/train_model.py
 
-# Step 4: Run test predictions on a sample payload
+# Step 4: Run predictions interactively (prompts for telemetry inputs, press Enter for defaults)
 python src/predict.py
+
+# Alternatively, run predictions non-interactively using the default sample payload
+python src/predict.py --non-interactive
 ```
 
 ---
@@ -245,22 +248,41 @@ Best F1 Score: 0.8959
 Model saved to: models/failure_model.pkl
 ```
 
-### 3. Inference / Prediction Output
+### 3. Inference / Prediction Output (Interactive Mode)
 ```text
 ==================================================
-NETWORK DEVICE FAILURE PREDICTION
+NETWORK DEVICE FAILURE PREDICTION - INTERACTIVE MODE
 ==================================================
-Device Type: Router
-CPU Usage: 92.0%
-Memory Usage: 94.0%
-Temperature: 78.0°C
-Interface Errors: 156
-Packet Loss: 8.2%
+Please enter telemetry values or press [Enter] to use defaults.
+--------------------------------------------------
+Device Type (Router/Switch) [Default: Router]: 
+CPU Usage (%) (0-100) [Default: 92.0]: 
+Memory Usage (%) (0-100) [Default: 94.0]: 
+Temperature (°C) (0-150) [Default: 78.0]: 
+Uptime (days) (>=0) [Default: 20.0]: 
+Interface Errors (count >=0) [Default: 156]: 
+Packet Loss (%) (0-100) [Default: 8.2]: 
+Bandwidth Usage (%) (0-100) [Default: 95.0]: 
+Log Errors (count >=0) [Default: 20]: 
 
-Failure Probability: 95.34%
-Risk Level: HIGH
-
+==================================================
+PREDICTION RESULT
+==================================================
+Device Type:        Router
+CPU Usage:          92.0%
+Memory Usage:       94.0%
+Temperature:        78.0°C
+Uptime:             20.0 days
+Interface Errors:   156
+Packet Loss:        8.2%
+Bandwidth Usage:    95.0%
+Log Errors:         20
+--------------------------------------------------
+Failure Probability: 84.00%
+Risk Level:          HIGH
+--------------------------------------------------
 ⚠️ WARNING: Preventive maintenance recommended.
+==================================================
 ```
 
 ---
@@ -268,7 +290,7 @@ Risk Level: HIGH
 ## 💾 Model Persistence & Registration
 
 The serialized model is saved to `models/failure_model.pkl` as a unified `scikit-learn` `Pipeline` object containing:
-1. `ColumnTransformer` (Scaling numeric values, leaving categoricals passthrough).
+1. `ColumnTransformer` (Scaling numeric values, encoding categoricals with `OneHotEncoder`).
 2. The optimized estimator (e.g., `XGBClassifier` or `RandomForestClassifier`).
 
 You can load the model back in any Python process for production batch or API serving using `joblib`:
