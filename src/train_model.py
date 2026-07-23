@@ -4,7 +4,7 @@ import os
 import joblib
 
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
@@ -87,7 +87,7 @@ preprocessor = ColumnTransformer(
         ),
         (
             "cat",
-            "passthrough",
+            OneHotEncoder(drop="first", sparse_output=False),
             categorical_features
         )
     ]
