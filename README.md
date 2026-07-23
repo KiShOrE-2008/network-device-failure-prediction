@@ -44,6 +44,7 @@ network-device-failure-prediction/
 │   └── predict.py              # CLI utility for inference on new device telemetry
 │
 ├── requirements.txt            # System dependencies
+├── app.py                      # Master pipeline orchestrator script
 └── README.md                   # Complete pipeline documentation (this file)
 ```
 
@@ -157,7 +158,17 @@ pip install -r requirements.txt
 
 ## 🚀 Usage Instructions
 
-Execute the pipeline scripts in the following order:
+You can run the entire pipeline (dataset generation, EDA, model training, and prediction) using the master orchestrator script:
+
+```bash
+# Run the entire pipeline sequentially (interactive prediction step at the end)
+python app.py
+
+# Run the entire pipeline sequentially (non-interactive prediction step at the end)
+python app.py --non-interactive
+```
+
+Alternatively, you can run individual scripts step-by-step:
 
 ```bash
 # Step 1: Generate simulated dataset
