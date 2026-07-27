@@ -6,3 +6,4 @@ seaborn
 joblib
 scikit-learn
 xgboost
+flask

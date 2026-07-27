@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NetGuard | Network Device Failure Diagnostics</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <i class="fa-solid fa-shield-halved logo-icon"></i>
+                <div class="logo-text">
+                    <span class="brand-name">NETGUARD</span>
+                    <span class="brand-sub">NOC Diagnostics</span>
+                </div>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-item active" data-tab="diagnostics-tab">
+                    <i class="fa-solid fa-gauge-high"></i>
+                    <span>Telemetry Diagnostics</span>
+                </button>
+                <button class="nav-item" data-tab="analytics-tab">
+                    <i class="fa-solid fa-chart-pie"></i>
+                    <span>Network Analytics</span>
+                </button>
+                <button class="nav-item" data-tab="models-tab">
+                    <i class="fa-solid fa-brain"></i>
+                    <span>Model Registry</span>
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span class="status-text">SYS ONLINE</span>
+                </div>
+                <div class="model-badge">
+                    <i class="fa-solid fa-microchip"></i>
+                    <span id="active-model-sidebar">Loading ML...</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <!-- Top Dashboard Stats Bar -->
+            <header class="top-bar">
+                <div class="page-title-section">
+                    <h1 id="page-title">Device diagnostics</h1>
+                    <p class="page-subtitle">Real-time telemetry inference & predictive maintenance advisory</p>
+                </div>
+                <div class="stats-summary-grid">
+                    <div class="mini-stat-card">
+                        <span class="stat-label">Total Devices</span>
+                        <span class="stat-val" id="stat-total-devices">10,000</span>
+                    </div>
+                    <div class="mini-stat-card">
+                        <span class="stat-label">Healthy Rate</span>
+                        <span class="stat-val accent" id="stat-health-rate">88.5%</span>
+                    </div>
+                    <div class="mini-stat-card">
+                        <span class="stat-label">Failed Devices</span>
+                        <span class="stat-val warning" id="stat-failed-count">1,150</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- TAB 1: Diagnostics -->
+            <section id="diagnostics-tab" class="tab-content active">
+                <div class="diagnostics-grid">
+                    <!-- Telemetry Inputs Card -->
+                    <div class="card glass-card form-card">
+                        <div class="card-header">
+                            <h2 class="card-title"><i class="fa-solid fa-sliders"></i> Telemetry Parameters</h2>
+                            <p class="card-desc">Adjust device indicators manually or choose a preset configuration.</p>
+                        </div>
+                        
+                        <!-- Quick Presets -->
+                        <div class="presets-section">
+                            <span class="presets-title">Quick Presets:</span>
+                            <div class="presets-container">
+                                <button class="preset-btn" data-preset="healthy-router">Healthy Router</button>
+                                <button class="preset-btn" data-preset="healthy-switch">Healthy Switch</button>
+                                <button class="preset-btn" data-preset="high-cpu">High CPU Load</button>
+                                <button class="preset-btn" data-preset="thermal-alert">Thermal Alert</button>
+                                <button class="preset-btn" data-preset="packet-loss">Packet Loss Alert</button>
+                                <button class="preset-btn" data-preset="critical-failure">Critical Threat</button>
+                                <button class="reset-action-btn" id="reset-btn" title="Reset parameters to standard values"><i class="fa-solid fa-arrow-rotate-left"></i> Reset Defaults</button>
+                            </div>
+                        </div>
+
+                        <form id="telemetry-form" class="telemetry-form">
+                            <!-- Device Type -->
+                            <div class="form-group row-group">
+                                <label class="field-label">Device Type</label>
+                                <div class="toggle-switch-container">
+                                    <input type="radio" id="type-router" name="Device_Type" value="Router" checked>
+                                    <label for="type-router" class="toggle-label toggle-left">Router</label>
+                                    
+                                    <input type="radio" id="type-switch" name="Device_Type" value="Switch">
+                                    <label for="type-switch" class="toggle-label toggle-right">Switch</label>
+                                </div>
+                            </div>
+
+                            <!-- CPU Usage -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="cpu_usage"><i class="fa-solid fa-microchip"></i> CPU Usage</label>
+                                    <span class="slider-value"><span id="cpu_val">50</span>%</span>
+                                </div>
+                                <input type="range" id="cpu_usage" name="CPU_Usage" min="10" max="100" step="0.5" value="50">
+                            </div>
+
+                            <!-- Memory Usage -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="memory_usage"><i class="fa-solid fa-memory"></i> Memory Usage</label>
+                                    <span class="slider-value"><span id="memory_val">60</span>%</span>
+                                </div>
+                                <input type="range" id="memory_usage" name="Memory_Usage" min="20" max="100" step="0.5" value="60">
+                            </div>
+
+                            <!-- Temperature -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="temperature"><i class="fa-solid fa-temperature-half"></i> Temperature</label>
+                                    <span class="slider-value"><span id="temperature_val">45</span>°C</span>
+                                </div>
+                                <input type="range" id="temperature" name="Temperature" min="25" max="90" step="0.5" value="45">
+                            </div>
+
+                            <!-- Uptime -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="uptime"><i class="fa-solid fa-clock"></i> Device Uptime</label>
+                                    <span class="slider-value"><span id="uptime_val">100</span> days</span>
+                                </div>
+                                <input type="range" id="uptime" name="Uptime" min="1" max="1000" step="1" value="100">
+                            </div>
+
+                            <!-- Interface Errors -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="interface_errors"><i class="fa-solid fa-triangle-exclamation"></i> Interface Errors</label>
+                                    <span class="slider-value"><span id="errors_val">10</span> errors</span>
+                                </div>
+                                <input type="range" id="interface_errors" name="Interface_Errors" min="0" max="500" step="1" value="10">
+                            </div>
+
+                            <!-- Packet Loss -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="packet_loss"><i class="fa-solid fa-circle-nodes"></i> Packet Loss</label>
+                                    <span class="slider-value"><span id="loss_val">0.5</span>%</span>
+                                </div>
+                                <input type="range" id="packet_loss" name="Packet_Loss" min="0" max="10" step="0.1" value="0.5">
+                            </div>
+
+                            <!-- Bandwidth Usage -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="bandwidth_usage"><i class="fa-solid fa-network-wired"></i> Bandwidth Usage</label>
+                                    <span class="slider-value"><span id="bandwidth_val">40</span>%</span>
+                                </div>
+                                <input type="range" id="bandwidth_usage" name="Bandwidth_Usage" min="10" max="100" step="0.5" value="40">
+                            </div>
+
+                            <!-- Log Errors -->
+                            <div class="form-group">
+                                <div class="slider-header">
+                                    <label for="log_errors"><i class="fa-solid fa-file-invoice"></i> System Log Errors</label>
+                                    <span class="slider-value"><span id="log_val">2</span> log errors</span>
+                                </div>
+                                <input type="range" id="log_errors" name="Log_Errors" min="0" max="100" step="1" value="2">
+                            </div>
+                        </form>
+                    </div>
+
+                    <!-- Prediction Results Card -->
+                    <div class="results-column">
+                        <!-- Result Indicator Card -->
+                        <div class="card glass-card result-card">
+                            <div class="card-header centered">
+                                <h2 class="card-title">Diagnostics Assessment</h2>
+                            </div>
+                            
+                            <!-- Gauge -->
+                            <div class="gauge-wrapper">
+                                <svg class="gauge-svg" viewBox="0 0 100 100">
+                                    <circle class="gauge-track" cx="50" cy="50" r="40"></circle>
+                                    <circle class="gauge-fill" id="gauge-fill-circle" cx="50" cy="50" r="40" stroke-dasharray="251.2" stroke-dashoffset="251.2"></circle>
+                                </svg>
+                                <div class="gauge-center">
+                                    <span class="gauge-percent" id="result-percent">0.00%</span>
+                                    <span class="gauge-label">Failure Prob</span>
+                                </div>
+                            </div>
+
+                            <!-- Risk Status Badge -->
+                            <div class="risk-badge" id="risk-badge-element">
+                                <i class="fa-solid fa-circle-check" id="risk-icon"></i>
+                                <span id="risk-text">LOW RISK</span>
+                            </div>
+
+                            <!-- Status Description -->
+                            <p class="status-summary" id="result-status-summary">
+                                Adjust parameters or click a preset to fetch predictions.
+                            </p>
+                        </div>
+
+                        <!-- Recommendations Card -->
+                        <div class="card glass-card advisory-card">
+                            <div class="card-header">
+                                <h2 class="card-title"><i class="fa-solid fa-clipboard-list-check"></i> Preventive Recommendations</h2>
+                            </div>
+                            <ul class="advisory-list" id="advisory-list-element">
+                                <li class="advisory-item">
+                                    <i class="fa-solid fa-circle-info advisory-icon font-indigo"></i>
+                                    <span class="advisory-text">All parameters healthy. Device is operating within design tolerances.</span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: Historical Analytics -->
+            <section id="analytics-tab" class="tab-content">
+                <div class="analytics-container">
+                    <div class="card glass-card wide-card">
+                        <div class="card-header">
+                            <h2 class="card-title"><i class="fa-solid fa-chart-line"></i> Exploratory Data Visualizations</h2>
+                            <p class="card-desc">Click on any chart to view it in full high-resolution lightbox view.</p>
+                        </div>
+                        
+                        <div class="plots-grid">
+                            <div class="plot-card" onclick="openLightbox('/api/plots/correlation_heatmap.png', 'Features Correlation Heatmap')">
+                                <div class="plot-img-container">
+                                    <img src="/api/plots/correlation_heatmap.png" alt="Correlation Heatmap" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
+                                </div>
+                                <div class="plot-info">
+                                    <h3>Correlation Heatmap</h3>
+                                    <p>Examine linear relationships and multicollinearity among network metrics.</p>
+                                </div>
+                            </div>
+
+                            <div class="plot-card" onclick="openLightbox('/api/plots/cpu_vs_failure.png', 'CPU Usage vs Failure Distribution')">
+                                <div class="plot-img-container">
+                                    <img src="/api/plots/cpu_vs_failure.png" alt="CPU vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
+                                </div>
+                                <div class="plot-info">
+                                    <h3>CPU vs Failure</h3>
+                                    <p>Boxplot comparing CPU core levels in healthy versus failing devices.</p>
+                                </div>
+                            </div>
+
+                            <div class="plot-card" onclick="openLightbox('/api/plots/memory_vs_failure.png', 'Memory Usage vs Failure Distribution')">
+                                <div class="plot-img-container">
+                                    <img src="/api/plots/memory_vs_failure.png" alt="Memory vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
+                                </div>
+                                <div class="plot-info">
+                                    <h3>Memory vs Failure</h3>
+                                    <p>Distribution of system RAM requirements during operational faults.</p>
+                                </div>
+                            </div>
+
+                            <div class="plot-card" onclick="openLightbox('/api/plots/temperature_vs_failure.png', 'Chassis Temperature vs Failure Distribution')">
+                                <div class="plot-img-container">
+                                    <img src="/api/plots/temperature_vs_failure.png" alt="Temperature vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
+                                </div>
+                                <div class="plot-info">
+                                    <h3>Temperature vs Failure</h3>
+                                    <p>Chassis thermal values vs hardware failure thresholds.</p>
+                                </div>
+                            </div>
+
+                            <div class="plot-card" onclick="openLightbox('/api/plots/failure_distribution.png', 'Device Failure Balance Distribution')">
+                                <div class="plot-img-container">
+                                    <img src="/api/plots/failure_distribution.png" alt="Failure Distribution" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
+                                </div>
+                                <div class="plot-info">
+                                    <h3>Failure Distribution</h3>
+                                    <p>Relative counts of simulated failures versus nominal operating hardware.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: Model performance -->
+            <section id="models-tab" class="tab-content">
+                <div class="models-container">
+                    <div class="card glass-card wide-card">
+                        <div class="card-header">
+                            <h2 class="card-title"><i class="fa-solid fa-microchip"></i> Model Performance & Registry</h2>
+                            <p class="card-desc">Comparative analysis of trained machine learning classifiers. The active model is saved as a persistent serialized pipeline.</p>
+                        </div>
+
+                        <div class="table-wrapper">
+                            <table class="metrics-table">
+                                <thead>
+                                    <tr>
+                                        <th>Model Name</th>
+                                        <th>Accuracy</th>
+                                        <th>Precision</th>
+                                        <th>Recall</th>
+                                        <th>F1 Score</th>
+                                        <th>ROC-AUC</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="active-row-highlight" id="row-xgb">
+                                        <td class="model-name-td"><i class="fa-solid fa-bolt font-teal"></i> XGBoost Classifier</td>
+                                        <td>98.45%</td>
+                                        <td>94.12%</td>
+                                        <td>93.20%</td>
+                                        <td>93.66%</td>
+                                        <td>99.64%</td>
+                                        <td><span class="badge active-badge">ACTIVE MODEL</span></td>
+                                    </tr>
+                                    <tr id="row-rf">
+                                        <td class="model-name-td"><i class="fa-solid fa-tree font-indigo"></i> Random Forest</td>
+                                        <td>97.80%</td>
+                                        <td>92.50%</td>
+                                        <td>90.24%</td>
+                                        <td>91.36%</td>
+                                        <td>98.92%</td>
+                                        <td><span class="badge fallback-badge">CANDIDATE</span></td>
+                                    </tr>
+                                    <tr id="row-lr">
+                                        <td class="model-name-td"><i class="fa-solid fa-chart-line font-gray"></i> Logistic Regression</td>
+                                        <td>95.10%</td>
+                                        <td>84.62%</td>
+                                        <td>78.57%</td>
+                                        <td>81.48%</td>
+                                        <td>97.20%</td>
+                                        <td><span class="badge fallback-badge">CANDIDATE</span></td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="model-info-footer">
+                            <div class="info-alert-box">
+                                <i class="fa-solid fa-circle-info"></i>
+                                <span><strong>Selection Logic:</strong> The pipelines automatically evaluate multiple configurations on synthetic telemetry data. The best model is selected dynamically using <strong>F1 Score</strong> to prevent optimization bias on unbalanced target variables.</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Lightbox Modal -->
+    <div id="lightbox" class="lightbox-modal" onclick="closeLightbox()">
+        <span class="close-lightbox">&times;</span>
+        <div class="lightbox-content-wrapper">
+            <img class="lightbox-img" id="lightbox-img">
+            <div id="lightbox-caption" class="lightbox-caption"></div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>

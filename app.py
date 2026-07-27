@@ -16,6 +16,20 @@ def main():
         print("Falling back to the current python interpreter.")
         python_bin = sys.executable
 
+    # Check if user wants to run the web server instead of the pipeline
+    if len(sys.argv) > 1 and sys.argv[1] == "--web":
+        cmd = [python_bin, "src/web_app.py"]
+        print("=" * 60)
+        print("STARTING THE NETWORK DEVICE DIAGNOSTICS WEB INTERFACE")
+        print("=" * 60)
+        print(f"\n[Running Web App] {' '.join(cmd)}")
+        print("-" * 60)
+        try:
+            subprocess.run(cmd)
+        except KeyboardInterrupt:
+            print("\n🛑 Web app server stopped by user.")
+        sys.exit(0)
+
     # Define the execution pipeline in order
     predict_args = sys.argv[1:]
     pipeline = [
