@@ -8,7 +8,18 @@ from flask import Flask, jsonify, request, send_from_directory
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE_ROOT = os.path.dirname(BASE_DIR)
 
+# Add src to path for sibling module imports
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+import health_engine
+import shap_explainer
+import history_store
+
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='')
+
+# Initialise SQLite prediction history (idempotent — safe to call every restart)
+history_store.init_db()
 
 # --------------------------------
 # Load model
@@ -54,9 +65,107 @@ def index():
     """Serves the main SPA page."""
     return app.send_static_file('index.html')
 
+def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str = "manual") -> dict:
+    """
+    Shared inference helper used by both /api/predict and /api/whatif.
+    Returns the full enriched result dict. Raises on error.
+    """
+    device_type = str(telemetry.get("Device_Type", "Router")).strip()
+    device_type = "Router" if device_type.lower() == "router" else "Switch"
+
+    cpu_usage        = float(telemetry.get("CPU_Usage", 0.0))
+    memory_usage     = float(telemetry.get("Memory_Usage", 0.0))
+    temperature      = float(telemetry.get("Temperature", 0.0))
+    uptime           = float(telemetry.get("Uptime", 0.0))
+    interface_errors = int(telemetry.get("Interface_Errors", 0))
+    packet_loss      = float(telemetry.get("Packet_Loss", 0.0))
+    bandwidth_usage  = float(telemetry.get("Bandwidth_Usage", 0.0))
+    log_errors       = int(telemetry.get("Log_Errors", 0))
+
+    clean_telemetry = {
+        "Device_Type":      device_type,
+        "CPU_Usage":        cpu_usage,
+        "Memory_Usage":     memory_usage,
+        "Temperature":      temperature,
+        "Uptime":           uptime,
+        "Interface_Errors": interface_errors,
+        "Packet_Loss":      packet_loss,
+        "Bandwidth_Usage":  bandwidth_usage,
+        "Log_Errors":       log_errors,
+    }
+
+    features_df = pd.DataFrame([clean_telemetry])
+
+    # Core ML inference
+    prediction  = int(model.predict(features_df)[0])
+    probability = float(model.predict_proba(features_df)[0][1])
+
+    # Risk classification
+    if probability < 0.30:
+        risk        = "LOW"
+        color       = "#00e676"
+        status_text = "Device condition is currently healthy and operating within acceptable parameters."
+    elif probability < 0.70:
+        risk        = "MEDIUM"
+        color       = "#ffb300"
+        status_text = "Moderate risk detected. Recommend close monitoring and secondary diagnostics."
+    else:
+        risk        = "HIGH"
+        color       = "#ff1744"
+        status_text = "CRITICAL WARNING: High failure probability. Preventive maintenance or immediate reboot/failover is highly recommended."
+
+    # Legacy advisory items (kept for backward compatibility)
+    advisory = []
+    if cpu_usage > 85.0:
+        advisory.append("CPU usage is critical. Consider load shedding, routing optimizations, or scaling hardware.")
+    if memory_usage > 90.0:
+        advisory.append("System memory is nearly exhausted. Check for memory leaks or rogue system processes.")
+    if temperature > 75.0:
+        advisory.append("Internal temperature is high. Clean chassis vents, check cooling fan performance, or reduce room ambient heat.")
+    if interface_errors > 100:
+        advisory.append("High count of interface CRC errors. Inspect network cables and SFP optics for physical defects.")
+    if packet_loss > 3.0:
+        advisory.append("Severe packet loss detected. Investigate buffer bloat, link congestion, or duplex mismatches.")
+    if log_errors > 15:
+        advisory.append("Excessive system log errors. Check console buffers for underlying hardware failures or authorization issues.")
+    if uptime > 365:
+        advisory.append("Device uptime exceeds 1 year. Schedule a preventative maintenance reboot to refresh buffers and system memory.")
+    if not advisory:
+        advisory.append("No specific hardware anomalies detected. All telemetry lines are within standard parameters.")
+
+    # --- New enrichment ---
+    # 1. SHAP causes (falls back to health_engine.main_causes on failure)
+    shap_causes = shap_explainer.get_shap_causes(clean_telemetry, top_n=5)
+
+    # 2. Full health report (uses SHAP causes if available)
+    report = health_engine.build_health_report(clean_telemetry, probability, shap_causes)
+
+    result = {
+        "success":             True,
+        "prediction":          prediction,
+        "probability":         probability,
+        "risk":                risk,
+        "risk_color":          color,
+        "status_text":         status_text,
+        "advisory":            advisory,
+        "model_used":          get_active_model_name(),
+        # New fields
+        "health_score":        report["health_score"],
+        "risk_window":         report["risk_window"],
+        "shap_causes":         shap_causes if shap_causes else report["top_causes"],
+        "recommended_actions": report["recommended_actions"],
+    }
+
+    # Log to history (only for real /api/predict calls, not what-if)
+    if log_to_history:
+        history_store.log_prediction(device_id, clean_telemetry, result)
+
+    return result
+
+
 @app.route('/api/predict', methods=['POST'])
 def predict():
-    """Receives telemetry details and returns failure probability."""
+    """Receives telemetry details and returns enriched failure prediction."""
     if model is None:
         return jsonify({
             "error": "ML model is not loaded. Please train the model using src/train_model.py."
@@ -67,84 +176,56 @@ def predict():
         if not data:
             return jsonify({"error": "No input data provided"}), 400
 
-        # Extract features and convert types
-        device_type = str(data.get("Device_Type", "Router")).strip()
-        # Standardize casing to match training
-        device_type = "Router" if device_type.lower() == "router" else "Switch"
-
-        cpu_usage = float(data.get("CPU_Usage", 0.0))
-        memory_usage = float(data.get("Memory_Usage", 0.0))
-        temperature = float(data.get("Temperature", 0.0))
-        uptime = float(data.get("Uptime", 0.0))
-        interface_errors = int(data.get("Interface_Errors", 0))
-        packet_loss = float(data.get("Packet_Loss", 0.0))
-        bandwidth_usage = float(data.get("Bandwidth_Usage", 0.0))
-        log_errors = int(data.get("Log_Errors", 0))
-
-        # Create single-record DataFrame
-        features_df = pd.DataFrame([{
-            "Device_Type": device_type,
-            "CPU_Usage": cpu_usage,
-            "Memory_Usage": memory_usage,
-            "Temperature": temperature,
-            "Uptime": uptime,
-            "Interface_Errors": interface_errors,
-            "Packet_Loss": packet_loss,
-            "Bandwidth_Usage": bandwidth_usage,
-            "Log_Errors": log_errors
-        }])
-
-        # Perform inference
-        prediction = int(model.predict(features_df)[0])
-        probability = float(model.predict_proba(features_df)[0][1])
-
-        # Risk Classification
-        if probability < 0.30:
-            risk = "LOW"
-            color = "#00e676"  # Bright Neon Green
-            status_text = "Device condition is currently healthy and operating within acceptable parameters."
-        elif probability < 0.70:
-            risk = "MEDIUM"
-            color = "#ffb300"  # Amber
-            status_text = "Moderate risk detected. Recommend close monitoring and secondary diagnostics."
-        else:
-            risk = "HIGH"
-            color = "#ff1744"  # Neon Red
-            status_text = "CRITICAL WARNING: High failure probability. Preventive maintenance or immediate reboot/failover is highly recommended."
-
-        # Diagnostics advisory details
-        advisory = []
-        if cpu_usage > 85.0:
-            advisory.append("CPU usage is critical. Consider load shedding, routing optimizations, or scaling hardware.")
-        if memory_usage > 90.0:
-            advisory.append("System memory is nearly exhausted. Check for memory leaks or rogue system processes.")
-        if temperature > 75.0:
-            advisory.append("Internal temperature is high. Clean chassis vents, check cooling fan performance, or reduce room ambient heat.")
-        if interface_errors > 100:
-            advisory.append("High count of interface CRC errors. Inspect network cables and SFP optics for physical defects.")
-        if packet_loss > 3.0:
-            advisory.append("Severe packet loss detected. Investigate buffer bloat, link congestion, or duplex mismatches.")
-        if log_errors > 15:
-            advisory.append("Excessive system log errors. Check console buffers for underlying hardware failures or authorization issues.")
-        if uptime > 365:
-            advisory.append("Device uptime exceeds 1 year. Schedule a preventative maintenance reboot to refresh buffers and system memory.")
-
-        if not advisory:
-            advisory.append("No specific hardware anomalies detected. All telemetry lines are within standard parameters.")
-
-        return jsonify({
-            "success": True,
-            "prediction": prediction,
-            "probability": probability,
-            "risk": risk,
-            "risk_color": color,
-            "status_text": status_text,
-            "advisory": advisory,
-            "model_used": get_active_model_name()
-        })
+        device_id = str(data.get("device_id", "manual")).strip() or "manual"
+        result = _run_inference(data, log_to_history=True, device_id=device_id)
+        return jsonify(result)
 
     except Exception as e:
         return jsonify({"error": f"Failed to perform prediction: {str(e)}"}), 500
+
+
+@app.route('/api/whatif', methods=['POST'])
+def whatif():
+    """
+    What-If simulator endpoint — identical to /api/predict but intentionally
+    does NOT log to history. Safe to call on every slider drag.
+    """
+    if model is None:
+        return jsonify({
+            "error": "ML model is not loaded. Please train the model using src/train_model.py."
+        }), 503
+
+    try:
+        data = request.json
+        if not data:
+            return jsonify({"error": "No input data provided"}), 400
+
+        result = _run_inference(data, log_to_history=False)
+        return jsonify(result)
+
+    except Exception as e:
+        return jsonify({"error": f"What-if inference failed: {str(e)}"}), 500
+
+
+@app.route('/api/history/<device_id>', methods=['GET'])
+def get_device_history(device_id):
+    """Return the last 50 logged predictions for a given device ID."""
+    try:
+        limit = int(request.args.get("limit", 50))
+        records = history_store.get_history(device_id, limit=limit)
+        return jsonify({"success": True, "device_id": device_id, "records": records})
+    except Exception as e:
+        return jsonify({"error": f"History fetch failed: {str(e)}"}), 500
+
+
+@app.route('/api/history', methods=['GET'])
+def get_global_history():
+    """Return the last 20 logged predictions across all devices."""
+    try:
+        records = history_store.get_recent_global(limit=20)
+        return jsonify({"success": True, "records": records})
+    except Exception as e:
+        return jsonify({"error": f"Global history fetch failed: {str(e)}"}), 500
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():

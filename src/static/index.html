@@ -11,6 +11,189 @@
     <!-- FontAwesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
+    <style>
+    /* ── Intelligence Hub & Additions ───────────────────────────────── */
+    .intelligence-grid {
+        display: grid;
+        grid-template-columns: 300px 1fr;
+        grid-template-rows: auto auto;
+        gap: 20px;
+    }
+    .intel-left  { display: flex; flex-direction: column; gap: 20px; }
+    .intel-right { display: flex; flex-direction: column; gap: 20px; }
+
+    /* Health Score Card */
+    .health-gauge-wrapper {
+        display: flex; flex-direction: column; align-items: center;
+        padding: 16px 0 8px;
+    }
+    .health-svg { width: 150px; height: 150px; }
+    .health-track {
+        fill: none; stroke: rgba(255,255,255,0.08);
+        stroke-width: 10; stroke-linecap: round;
+    }
+    .health-arc {
+        fill: none; stroke: #00e676;
+        stroke-width: 10; stroke-linecap: round;
+        stroke-dasharray: 282.7; stroke-dashoffset: 282.7;
+        transform: rotate(-90deg); transform-origin: 50% 50%;
+        transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1), stroke 0.5s;
+    }
+    .health-center-text {
+        display: flex; flex-direction: column; align-items: center;
+        position: absolute; inset: 0; justify-content: center;
+    }
+    .health-score-num {
+        font-size: 2.2rem; font-weight: 700;
+        font-family: 'Outfit', sans-serif;
+        color: #00e676; line-height: 1;
+        transition: color 0.5s;
+    }
+    .health-score-sub { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; }
+    .health-score-label {
+        font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
+        color: #00e676; margin-top: 6px;
+        transition: color 0.5s;
+    }
+    .health-gauge-rel { position: relative; display: inline-block; }
+    .risk-window-pill {
+        background: rgba(99,102,241,0.15);
+        border: 1px solid rgba(99,102,241,0.3);
+        border-radius: 20px; padding: 6px 14px;
+        font-size: 0.75rem; color: var(--text-secondary);
+        text-align: center; margin: 8px 12px 0;
+        line-height: 1.4;
+    }
+
+    /* SHAP Bars */
+    .shap-bars-container { padding: 8px 4px; }
+    .shap-row {
+        display: grid;
+        grid-template-columns: 140px 1fr 58px;
+        align-items: center; gap: 10px;
+        margin-bottom: 10px;
+        animation: fadeSlideIn 0.4s ease both;
+    }
+    @keyframes fadeSlideIn {
+        from { opacity: 0; transform: translateX(-8px); }
+        to   { opacity: 1; transform: translateX(0); }
+    }
+    .shap-label {
+        display: flex; align-items: center; gap: 6px;
+        font-size: 0.76rem; color: var(--text-secondary);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .shap-dir { font-size: 0.9rem; font-weight: 700; }
+    .shap-bar-track {
+        background: rgba(255,255,255,0.06);
+        border-radius: 4px; height: 10px; overflow: hidden;
+    }
+    .shap-bar-fill {
+        height: 100%; border-radius: 4px; width: 0%;
+    }
+    .shap-pct { font-size: 0.7rem; text-align: right; font-variant-numeric: tabular-nums; }
+    .shap-empty { font-size: 0.8rem; color: var(--text-muted); padding: 8px 0; }
+
+    /* History */
+    .history-lookup-row {
+        display: flex; gap: 10px; margin-bottom: 14px;
+    }
+    .history-lookup-row input {
+        flex: 1; background: rgba(255,255,255,0.06);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 8px; padding: 8px 12px;
+        color: var(--text-primary); font-size: 0.85rem;
+        outline: none;
+    }
+    .history-lookup-row input:focus {
+        border-color: var(--accent-primary);
+    }
+    .history-lookup-row button {
+        background: var(--accent-primary); border: none;
+        border-radius: 8px; padding: 8px 16px;
+        color: #fff; font-size: 0.82rem; cursor: pointer;
+        font-family: inherit; font-weight: 600;
+        transition: opacity 0.2s;
+    }
+    .history-lookup-row button:hover { opacity: 0.85; }
+    #history-chart-container { min-height: 120px; }
+    .sparkline-svg { display: block; }
+    .sparkline-axis-label { fill: rgba(255,255,255,0.3); font-size: 9px; }
+    .sparkline-grid-line { stroke: rgba(255,255,255,0.05); stroke-width: 1; }
+    .sparkline-dot { cursor: pointer; transition: r 0.15s; }
+    .sparkline-dot:hover { r: 5; }
+    #history-empty-msg { display:none; color: var(--text-muted); font-size: 0.82rem; padding:16px 0; text-align:center; }
+    .history-table-wrapper { overflow-x: auto; margin-top: 12px; }
+    .history-table {
+        width: 100%; border-collapse: collapse; font-size: 0.78rem;
+    }
+    .history-table th {
+        color: var(--text-muted); padding: 6px 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.08);
+        text-align: left; font-weight: 500;
+    }
+    .history-table td {
+        padding: 7px 10px;
+        border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    /* Intel actions */
+    .intel-actions-list { list-style: none; padding: 0; margin: 0; }
+    .intel-action-item {
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
+        font-size: 0.82rem; color: var(--text-secondary);
+    }
+    .intel-action-item i { color: var(--accent-primary); margin-top: 2px; flex-shrink: 0; }
+    .intel-action-item:last-child { border-bottom: none; }
+
+    /* What-If */
+    .whatif-toggle-row {
+        display: flex; justify-content: flex-end;
+        margin-top: 14px;
+    }
+    #whatif-toggle-btn {
+        background: rgba(99,102,241,0.15);
+        border: 1px solid rgba(99,102,241,0.35);
+        border-radius: 20px; padding: 8px 18px;
+        color: #a5b4fc; font-size: 0.82rem; cursor: pointer;
+        font-family: inherit; font-weight: 600;
+        display: flex; align-items: center; gap: 8px;
+        transition: background 0.2s, border-color 0.2s;
+    }
+    #whatif-toggle-btn:hover, #whatif-toggle-btn.active {
+        background: rgba(99,102,241,0.30);
+        border-color: rgba(99,102,241,0.6);
+        color: #fff;
+    }
+    #whatif-panel {
+        display: none;
+        margin-top: 16px;
+        padding: 18px;
+        background: rgba(99,102,241,0.07);
+        border: 1px solid rgba(99,102,241,0.2);
+        border-radius: 14px;
+    }
+    .wi-title {
+        font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em;
+        color: #a5b4fc; margin-bottom: 14px;
+        display: flex; align-items: center; gap: 8px;
+    }
+    .wi-metrics-grid {
+        display: grid; grid-template-columns: repeat(2,1fr); gap: 10px;
+    }
+    .wi-metric-box {
+        background: rgba(255,255,255,0.04);
+        border-radius: 10px; padding: 12px 14px;
+    }
+    .wi-metric-label { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
+    .wi-metric-val   { font-size: 1.3rem; font-weight: 700; color: #fff; font-family: 'Outfit', sans-serif; }
+    .wi-delta {
+        font-size: 0.72rem; font-weight: 700; margin-top: 2px; display: block;
+    }
+    .delta-bad  { color: #ff1744; }
+    .delta-good { color: #00e676; }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -36,6 +219,10 @@
                 <button class="nav-item" data-tab="models-tab">
                     <i class="fa-solid fa-brain"></i>
                     <span>Model Registry</span>
+                </button>
+                <button class="nav-item" data-tab="intelligence-tab">
+                    <i class="fa-solid fa-atom"></i>
+                    <span>Intelligence Hub</span>
                 </button>
             </nav>
 
@@ -232,6 +419,39 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- What-If Toggle & Panel -->
+                <div class="whatif-toggle-row">
+                    <button id="whatif-toggle-btn">
+                        <i class="fa-solid fa-flask-vial"></i> What-If Simulator
+                    </button>
+                </div>
+                <div id="whatif-panel">
+                    <div class="wi-title">
+                        <i class="fa-solid fa-flask-vial"></i>
+                        WHAT-IF ANALYSIS — Slider values vs baseline prediction
+                    </div>
+                    <div class="wi-metrics-grid">
+                        <div class="wi-metric-box">
+                            <div class="wi-metric-label">Failure Probability</div>
+                            <div class="wi-metric-val" id="wi-prob-val">—</div>
+                            <span class="wi-delta" id="wi-delta-prob"></span>
+                        </div>
+                        <div class="wi-metric-box">
+                            <div class="wi-metric-label">Health Score</div>
+                            <div class="wi-metric-val" id="wi-health-val">—</div>
+                            <span class="wi-delta" id="wi-delta-health"></span>
+                        </div>
+                        <div class="wi-metric-box">
+                            <div class="wi-metric-label">Risk Level</div>
+                            <div class="wi-metric-val" id="wi-risk-val" style="font-size:1rem">—</div>
+                        </div>
+                        <div class="wi-metric-box">
+                            <div class="wi-metric-label">Estimated Window</div>
+                            <div class="wi-metric-val" id="wi-window-val" style="font-size:0.75rem;line-height:1.3">—</div>
+                        </div>
+                    </div>
+                </div>
             </section>
 
             <!-- TAB 2: Historical Analytics -->
@@ -361,10 +581,105 @@
                     </div>
                 </div>
             </section>
+
+            <!-- TAB 4: Intelligence Hub -->
+            <section id="intelligence-tab" class="tab-content">
+                <div class="intelligence-grid">
+
+                <!-- LEFT column -->
+                <div class="intel-left">
+                <!-- Health Score Card -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-heart-pulse"></i> Device Health Score</h2>
+                        <p class="card-desc">Weighted badness score derived from the same telemetry formula used to generate training labels.</p>
+                    </div>
+                    <div class="health-gauge-wrapper">
+                        <div class="health-gauge-rel">
+                            <svg class="health-svg" viewBox="0 0 100 100">
+                                <circle class="health-track" cx="50" cy="50" r="45"/>
+                                <circle class="health-arc" id="health-score-arc" cx="50" cy="50" r="45"/>
+                            </svg>
+                            <div class="health-center-text">
+                                <span class="health-score-num" id="health-score-value">—</span>
+                                <span class="health-score-sub">/ 100</span>
+                            </div>
+                        </div>
+                        <span class="health-score-label" id="health-score-label">PENDING</span>
+                    </div>
+                    <div class="risk-window-pill" id="risk-window-text">
+                        Run a diagnostic to see estimated failure window
+                    </div>
+                </div>
+
+                <!-- Recommended Actions Card -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-list-check"></i> Recommended Actions</h2>
+                    </div>
+                    <ul class="intel-actions-list" id="intel-actions-list">
+                        <li class="intel-action-item">
+                            <i class="fa-solid fa-arrow-right-long"></i>
+                            <span>Run a diagnostic to see recommended actions.</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- RIGHT column -->
+            <div class="intel-right">
+                <!-- SHAP Explainability Card -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-magnifying-glass-chart"></i> AI Explainability (SHAP)</h2>
+                        <p class="card-desc">Top features driving the failure probability — sorted by absolute SHAP contribution. Red = increases risk, green = decreases risk.</p>
+                    </div>
+                    <div class="shap-bars-container" id="shap-bars-container">
+                        <p class="shap-empty">Run a diagnostic from the Telemetry tab to load explanations.</p>
+                    </div>
+                </div>
+
+                <!-- Prediction History Card -->
+                <div class="card glass-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-chart-line"></i> Prediction History</h2>
+                        <p class="card-desc">Failure probability over the last 30 logged predictions. Each point colour reflects the risk level at that time.</p>
+                    </div>
+
+                    <div class="history-lookup-row">
+                        <input type="text" id="history-device-input"
+                               placeholder="Device ID (e.g. DEV-00042 or manual)"
+                               value="manual">
+                        <button id="history-lookup-btn">
+                            <i class="fa-solid fa-magnifying-glass"></i> Load
+                        </button>
+                    </div>
+
+                    <div id="history-chart-container"></div>
+                    <p id="history-empty-msg">No history yet for this device. Run diagnostics to populate.</p>
+
+                    <div class="history-table-wrapper">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Timestamp</th>
+                                    <th>Failure Prob</th>
+                                    <th>Health Score</th>
+                                    <th>Risk</th>
+                                </tr>
+                            </thead>
+                            <tbody id="history-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
         </main>
     </div>
 
-    <!-- Lightbox Modal -->
+
     <div id="lightbox" class="lightbox-modal" onclick="closeLightbox()">
         <span class="close-lightbox">&times;</span>
         <div class="lightbox-content-wrapper">
@@ -374,5 +689,6 @@
     </div>
 
     <script src="app.js"></script>
+    <script src="app_additions.js"></script>
 </body>
 </html>

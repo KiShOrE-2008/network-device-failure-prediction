@@ -1,6 +1,6 @@
 # Network Device Failure Prediction Pipeline
 
-A comprehensive machine learning pipeline designed to predict failures in network devices (Routers and Switches) based on multi-dimensional telemetry, performance, and traffic quality metrics. The repository features synthetic data generation, exploratory visual analytics, comparative model training with evaluation metrics, and a predictive maintenance inference interface.
+A comprehensive machine learning pipeline designed to predict failures in network devices (Routers and Switches) based on multi-dimensional telemetry, performance, and traffic quality metrics. The repository features synthetic data generation, exploratory visual analytics, comparative model training, a predictive maintenance inference interface, and — as of v2 — an **Intelligence Hub** with real-time AI explainability, device health scoring, prediction history, and an interactive what-if simulator.
 
 ---
 
@@ -11,10 +11,12 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 4. [Exploratory Data Analysis (EDA)](#exploratory-data-analysis-eda)
 5. [Preprocessing & Feature Engineering](#preprocessing--feature-engineering)
 6. [Model Architecture & Hyperparameters](#model-architecture--hyperparameters)
-7. [Installation & Requirements](#installation--requirements)
-8. [Usage Instructions](#usage-instructions)
-9. [Sample Commands & CLI Output](#sample-commands--cli-output)
-10. [Model Persistence & Registration](#model-persistence--registration)
+7. [Intelligence Hub — v2 Features](#intelligence-hub--v2-features)
+8. [REST API Reference](#rest-api-reference)
+9. [Installation & Requirements](#installation--requirements)
+10. [Usage Instructions](#usage-instructions)
+11. [Sample Commands & CLI Output](#sample-commands--cli-output)
+12. [Model Persistence & Registration](#model-persistence--registration)
 
 ---
 
@@ -24,7 +26,8 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 network-device-failure-prediction/
 │
 ├── data/                       # Holds raw and generated CSV datasets
-│   └── network_devices.csv     # Simulated telemetry dataset
+│   ├── network_devices.csv     # Simulated telemetry dataset (10,000 records)
+│   └── predictions.db          # SQLite prediction history (auto-created on first run)
 │
 ├── models/                     # Registry for serialized joblib models
 │   └── failure_model.pkl       # Saved optimal ColumnTransformer + Classifier pipeline
@@ -42,13 +45,19 @@ network-device-failure-prediction/
 │   ├── preprocess.py           # Preprocessing utilities
 │   ├── train_model.py          # Preprocessing + training + evaluation + saving pipeline
 │   ├── predict.py              # CLI utility for inference on new device telemetry
-│   ├── web_app.py              # Flask server backend
+│   ├── web_app.py              # Flask server backend (v2: enriched predict + new routes)
+│   │
+│   ├── health_engine.py        # [v2] Health score, risk window & cause-ranking engine
+│   ├── shap_explainer.py       # [v2] SHAP TreeExplainer — AI feature attribution
+│   ├── history_store.py        # [v2] SQLite-backed prediction history store
+│   │
 │   └── static/                 # Frontend SPA directory
-│       ├── index.html          # Dashboard HTML UI
-│       ├── style.css           # Premium styling theme stylesheet
-│       └── app.js              # Interactivity & AJAX client JavaScript
+│       ├── index.html          # Dashboard HTML UI (v2: Intelligence Hub tab + What-If)
+│       ├── style.css           # Premium glassmorphic styling theme
+│       ├── app.js              # Interactivity & AJAX client JavaScript
+│       └── app_additions.js    # [v2] Health gauge, SHAP bars, history chart, what-if
 │
-├── requirements.txt            # System dependencies (now includes flask)
+├── requirements.txt            # System dependencies
 ├── app.py                      # Master pipeline orchestrator script (supports --web)
 └── README.md                   # Complete pipeline documentation (this file)
 ```
@@ -67,6 +76,8 @@ Where:
 - $\epsilon \sim \mathcal{N}(0, 0.05)$ represents stochastic environment/hardware noise.
 - The failure threshold is set at $S_{failure} > 0.65$:
   $$\text{Failed} = \begin{cases} 1 & \text{if } S_{failure} > 0.65 \\ 0 & \text{otherwise} \end{cases}$$
+
+> **Note:** The same weights are reused in `health_engine.py` to compute the real-time device health score (0–100), keeping the synthetic label formula and the live diagnostic engine conceptually consistent.
 
 ---
 
@@ -138,6 +149,108 @@ $$\text{F1-Score} = 2 \times \frac{\text{Precision} \times \text{Recall}}{\text{
 
 ---
 
+## 🧠 Intelligence Hub — v2 Features
+
+Version 2 adds four intelligence features on top of the existing ML pipeline. They are implemented as separate, independently testable modules and are **non-destructive** — all existing routes and frontend behaviour are preserved.
+
+### 1. Device Health Score (`src/health_engine.py`)
+
+A real-time **0–100 health score** computed from the same weighted metric formula used to generate training labels. No model is needed — it is a pure function of the incoming telemetry.
+
+| Score Range | Status |
+|---|---|
+| 70 – 100 | 🟢 HEALTHY |
+| 40 – 69 | 🟡 DEGRADED |
+| 0 – 39 | 🔴 CRITICAL |
+
+Each prediction response now also includes an **estimated failure window** (e.g. *"High risk — immediate maintenance required"*) mapped from the model's probability output via heuristic bucketing.
+
+### 2. SHAP AI Explainability (`src/shap_explainer.py`)
+
+Uses `shap.TreeExplainer` — the exact, fast algorithm for XGBoost — to attribute the failure probability to individual telemetry features. Results are displayed as an animated bar chart in the **Intelligence Hub** tab.
+
+- Each bar shows the **SHAP contribution** for that feature on the current telemetry reading.
+- Red bars (↑) increase failure risk; green bars (↓) decrease it.
+- If SHAP throws for any reason (version mismatch, model not loaded), the dashboard falls back to `health_engine.main_causes()` — a simpler weighted-badness ranking — so the UI **never breaks**.
+
+### 3. Prediction History (`src/history_store.py`)
+
+Every `/api/predict` call is automatically logged to a local **SQLite database** (`data/predictions.db`).
+
+- The **Intelligence Hub → Prediction History** card displays a sparkline of the last 30 failure probabilities, with colour-coded dots per risk level, plus a tabular summary of the 10 most recent entries.
+- You can look up history for any **Device ID** (e.g. `DEV-00042`) via the search field.
+- `/api/whatif` calls are **intentionally not logged**, so slider-dragging in What-If mode never pollutes history.
+
+### 4. What-If Simulator
+
+A **What-If Simulator** button in the Diagnostics tab activates a live comparison mode:
+
+- All existing sliders still drive the main prediction gauge (via `/api/predict`).
+- With What-If mode **on**, slider changes additionally call `/api/whatif` (no logging) and display a delta panel showing:
+  - Current vs baseline **failure probability** (with Δ coloured red/green)
+  - Current vs baseline **health score** (with Δ)
+  - Updated **risk level** and **estimated failure window**
+
+### New API Endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `POST /api/predict` | POST | Existing endpoint — now also returns `health_score`, `risk_window`, `shap_causes`, `recommended_actions` |
+| `POST /api/whatif` | POST | Identical inference but does **not** log to history |
+| `GET /api/history/<device_id>` | GET | Returns last 50 logged predictions for the device |
+| `GET /api/history` | GET | Returns last 20 predictions across all devices |
+
+---
+
+## 🔌 REST API Reference
+
+### `POST /api/predict`
+
+**Request body (JSON):**
+```json
+{
+  "device_id":        "DEV-00042",
+  "Device_Type":      "Router",
+  "CPU_Usage":        94.0,
+  "Memory_Usage":     70.0,
+  "Temperature":      81.0,
+  "Uptime":           100.0,
+  "Interface_Errors": 27,
+  "Packet_Loss":      8.4,
+  "Bandwidth_Usage":  60.0,
+  "Log_Errors":       12
+}
+```
+
+**Response (JSON) — v2 enriched:**
+```json
+{
+  "success":             true,
+  "prediction":          1,
+  "probability":         0.82,
+  "risk":                "HIGH",
+  "risk_color":          "#ff1744",
+  "status_text":         "CRITICAL WARNING: ...",
+  "advisory":            ["CPU usage is critical. ...", "..."],
+  "model_used":          "XGBoost Classifier",
+  "health_score":        25.4,
+  "risk_window":         "High risk — immediate maintenance required",
+  "shap_causes":         [{"feature": "CPU Usage", "contribution": 0.2269, "direction": "increases_risk"}, "..."],
+  "recommended_actions": ["Redistribute process load or upgrade CPU capacity.", "..."]
+}
+```
+
+### `GET /api/history/<device_id>`
+Returns `{"success": true, "device_id": "DEV-00042", "records": [...]}` with the last 50 logged predictions for that device.
+
+### `GET /api/stats`
+Dataset-level summary statistics (total devices, failure rate, average metrics, active model name).
+
+### `GET /api/plots/<filename>`
+Serves EDA plot images from `outputs/`.
+
+---
+
 ## 📥 Installation & Requirements
 
 ### 1. Requirements
@@ -150,13 +263,14 @@ Ensure you are using Python 3.8+ with a virtual environment. The required librar
 - `scikit-learn`
 - `xgboost`
 - `flask` (required for hosting the Web Interface dashboard)
+- `shap` (required for AI explainability — v2)
 
 ### 2. Setup Guide
 ```bash
 # Activate your virtual environment
 source venv/bin/activate
 
-# Install the required packages
+# Install the required packages (includes shap as of v2)
 pip install -r requirements.txt
 ```
 
@@ -181,12 +295,19 @@ Once started, open your web browser and navigate to: **http://localhost:5000**.
 - **Quick-presets**: Instantly populate nominal configurations, thermal failures, or congestion scenarios.
 - **Reset to Defaults**: Reset all parameter inputs back to default standard values in one click.
 - **Exploratory Analytics Gallery**: View and expand the EDA plots generated by the model.
-- **Model performance list**: Side-by-side comparison of Logistic Regression, Random Forest, and XGBoost classifiers.
+- **Model Performance Registry**: Side-by-side comparison of Logistic Regression, Random Forest, and XGBoost classifiers.
+- **🆕 Intelligence Hub tab**:
+  - Circular health score gauge (0–100, colour-coded)
+  - Estimated failure window label
+  - Animated SHAP bar chart (top-5 feature attributions)
+  - Prediction history sparkline + per-device lookup table
+  - Recommended maintenance actions list
+- **🆕 What-If Simulator**: Toggle in the Diagnostics tab to compare delta probability & health score against the baseline in real time — without logging to history.
 
 ---
 
 ### Run the Pipeline via CLI
-You can also execute the batch pipeline (dataset generation, EDA, model training, and prediction) using the orchestrator:
+You can also execute the batch pipeline using the orchestrator:
 
 ```bash
 # Run the pipeline sequentially (interactive prediction step at the end)
@@ -196,7 +317,7 @@ python app.py
 python app.py --non-interactive
 ```
 
-Alternatively, you can run individual scripts step-by-step:
+Alternatively, run individual scripts step-by-step:
 
 ```bash
 # Step 1: Generate simulated dataset
@@ -213,6 +334,22 @@ python src/predict.py
 
 # Alternatively, run predictions non-interactively using the default sample payload
 python src/predict.py --non-interactive
+```
+
+---
+
+### Sanity-Check the v2 Modules
+
+```bash
+# Health engine (no model required)
+python -c "
+import sys; sys.path.insert(0, 'src')
+from health_engine import build_health_report
+print(build_health_report({'CPU_Usage':94,'Memory_Usage':70,'Temperature':81,'Interface_Errors':27,'Packet_Loss':8.4,'Bandwidth_Usage':60,'Log_Errors':12}, 0.82))
+"
+
+# History store (creates data/predictions.db if absent)
+python -c "import sys; sys.path.insert(0, 'src'); import history_store; history_store.init_db(); print('ok')"
 ```
 
 ---
@@ -329,8 +466,8 @@ Risk Level:          HIGH
 ## 💾 Model Persistence & Registration
 
 The serialized model is saved to `models/failure_model.pkl` as a unified `scikit-learn` `Pipeline` object containing:
-1. `ColumnTransformer` (Scaling numeric values, encoding categoricals with `OneHotEncoder`).
-2. The optimized estimator (e.g., `XGBClassifier` or `RandomForestClassifier`).
+1. `ColumnTransformer` step named `"preprocessor"` (scaling numeric values, encoding categoricals).
+2. The optimized estimator step named `"model"` (e.g., `XGBClassifier`).
 
 You can load the model back in any Python process for production batch or API serving using `joblib`:
 
@@ -342,6 +479,8 @@ import pandas as pd
 model_pipeline = joblib.load("models/failure_model.pkl")
 
 # Predict on new data DataFrame
-predictions = model_pipeline.predict(new_data_df)
+predictions   = model_pipeline.predict(new_data_df)
 probabilities = model_pipeline.predict_proba(new_data_df)[:, 1]
 ```
+
+The SHAP explainer (`src/shap_explainer.py`) also loads this pipeline automatically on import and uses `pipeline.named_steps["preprocessor"]` and `pipeline.named_steps["model"]` to compute attributions.
