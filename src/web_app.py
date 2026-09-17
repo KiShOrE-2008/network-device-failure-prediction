@@ -166,6 +166,7 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
         "anomalous_features":   anom_res["anomalous_features"],
         "shap_causes":          shap_causes if shap_causes else report["top_causes"],
         "recommended_actions":  diag_res["recommended_actions"],
+        "advisory":             diag_res["recommended_actions"],
         "syslog_summary":       log_info
     }
 

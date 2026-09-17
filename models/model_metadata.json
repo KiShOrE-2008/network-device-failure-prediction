@@ -1,0 +1,41 @@
+{
+  "training_timestamp": "2026-09-17T11:51:14.764693",
+  "total_records": 50000,
+  "total_devices": 500,
+  "binary_model_name": "XGBoost",
+  "binary_metrics": {
+    "Accuracy": 0.9907,
+    "Precision": 0.9254843517138599,
+    "Recall": 0.9352409638554217,
+    "F1": 0.9303370786516854,
+    "ROC-AUC": 0.9986131866798815
+  },
+  "diagnostic_metrics": {
+    "Accuracy": 0.989,
+    "Weighted_F1": 0.9883497782041102
+  },
+  "failure_classes": [
+    "CONGESTION",
+    "HARDWARE",
+    "INTERFACE",
+    "MEMORY",
+    "NONE",
+    "THERMAL"
+  ],
+  "features": [
+    "Device_Type",
+    "CPU_Usage",
+    "Memory_Usage",
+    "Temperature",
+    "Uptime",
+    "Interface_Errors",
+    "Packet_Loss",
+    "Bandwidth_Usage",
+    "Log_Errors",
+    "CPU_Trend",
+    "Memory_Trend",
+    "Temperature_Trend",
+    "Error_Trend",
+    "PacketLoss_Trend"
+  ]
+}

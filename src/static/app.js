@@ -446,7 +446,8 @@ function updateUIWithResults(data) {
     // Update Recommendations list
     advisoryList.innerHTML = ''; // clear previous
     
-    data.advisory.forEach(adv => {
+    const actions = data.recommended_actions || data.advisory || [];
+    actions.forEach(adv => {
         const li = document.createElement('li');
         li.className = 'advisory-item';
         
