@@ -1,725 +1,472 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NetGuard | Network Device Failure Diagnostics</title>
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <!-- FontAwesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
-    <style>
-    /* ── Intelligence Hub & Additions ───────────────────────────────── */
-    .intelligence-grid {
-        display: grid;
-        grid-template-columns: 300px 1fr;
-        grid-template-rows: auto auto;
-        gap: 20px;
-    }
-    .intel-left  { display: flex; flex-direction: column; gap: 20px; }
-    .intel-right { display: flex; flex-direction: column; gap: 20px; }
-
-    /* Health Score Card */
-    .health-gauge-wrapper {
-        display: flex; flex-direction: column; align-items: center;
-        padding: 16px 0 8px;
-    }
-    .health-svg { width: 150px; height: 150px; }
-    .health-track {
-        fill: none; stroke: rgba(255,255,255,0.08);
-        stroke-width: 10; stroke-linecap: round;
-    }
-    .health-arc {
-        fill: none; stroke: #00e676;
-        stroke-width: 10; stroke-linecap: round;
-        stroke-dasharray: 282.7; stroke-dashoffset: 282.7;
-        transform: rotate(-90deg); transform-origin: 50% 50%;
-        transition: stroke-dashoffset 0.8s cubic-bezier(0.4,0,0.2,1), stroke 0.5s;
-    }
-    .health-center-text {
-        display: flex; flex-direction: column; align-items: center;
-        position: absolute; inset: 0; justify-content: center;
-    }
-    .health-score-num {
-        font-size: 2.2rem; font-weight: 700;
-        font-family: 'Outfit', sans-serif;
-        color: #00e676; line-height: 1;
-        transition: color 0.5s;
-    }
-    .health-score-sub { font-size: 0.65rem; color: var(--text-muted); margin-top: 2px; }
-    .health-score-label {
-        font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em;
-        color: #00e676; margin-top: 6px;
-        transition: color 0.5s;
-    }
-    .health-gauge-rel { position: relative; display: inline-block; }
-    .risk-window-pill {
-        background: rgba(99,102,241,0.15);
-        border: 1px solid rgba(99,102,241,0.3);
-        border-radius: 20px; padding: 6px 14px;
-        font-size: 0.75rem; color: var(--text-secondary);
-        text-align: center; margin: 8px 12px 0;
-        line-height: 1.4;
-    }
-
-    /* SHAP Bars */
-    .shap-bars-container { padding: 8px 4px; }
-    .shap-row {
-        display: grid;
-        grid-template-columns: 140px 1fr 58px;
-        align-items: center; gap: 10px;
-        margin-bottom: 10px;
-        animation: fadeSlideIn 0.4s ease both;
-    }
-    @keyframes fadeSlideIn {
-        from { opacity: 0; transform: translateX(-8px); }
-        to   { opacity: 1; transform: translateX(0); }
-    }
-    .shap-label {
-        display: flex; align-items: center; gap: 6px;
-        font-size: 0.76rem; color: var(--text-secondary);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .shap-dir { font-size: 0.9rem; font-weight: 700; }
-    .shap-bar-track {
-        background: rgba(255,255,255,0.06);
-        border-radius: 4px; height: 10px; overflow: hidden;
-    }
-    .shap-bar-fill {
-        height: 100%; border-radius: 4px; width: 0%;
-    }
-    .shap-pct { font-size: 0.7rem; text-align: right; font-variant-numeric: tabular-nums; }
-    .shap-empty { font-size: 0.8rem; color: var(--text-muted); padding: 8px 0; }
-
-    /* History */
-    .history-lookup-row {
-        display: flex; gap: 10px; margin-bottom: 14px;
-    }
-    .history-lookup-row input {
-        flex: 1; background: rgba(255,255,255,0.06);
-        border: 1px solid rgba(255,255,255,0.12);
-        border-radius: 8px; padding: 8px 12px;
-        color: var(--text-primary); font-size: 0.85rem;
-        outline: none;
-    }
-    .history-lookup-row input:focus {
-        border-color: var(--accent-primary);
-    }
-    .history-lookup-row button {
-        background: var(--accent-primary); border: none;
-        border-radius: 8px; padding: 8px 16px;
-        color: #fff; font-size: 0.82rem; cursor: pointer;
-        font-family: inherit; font-weight: 600;
-        transition: opacity 0.2s;
-    }
-    .history-lookup-row button:hover { opacity: 0.85; }
-    #history-chart-container { min-height: 120px; }
-    .sparkline-svg { display: block; }
-    .sparkline-axis-label { fill: rgba(255,255,255,0.3); font-size: 9px; }
-    .sparkline-grid-line { stroke: rgba(255,255,255,0.05); stroke-width: 1; }
-    .sparkline-dot { cursor: pointer; transition: r 0.15s; }
-    .sparkline-dot:hover { r: 5; }
-    #history-empty-msg { display:none; color: var(--text-muted); font-size: 0.82rem; padding:16px 0; text-align:center; }
-    .history-table-wrapper { overflow-x: auto; margin-top: 12px; }
-    .history-table {
-        width: 100%; border-collapse: collapse; font-size: 0.78rem;
-    }
-    .history-table th {
-        color: var(--text-muted); padding: 6px 10px;
-        border-bottom: 1px solid rgba(255,255,255,0.08);
-        text-align: left; font-weight: 500;
-    }
-    .history-table td {
-        padding: 7px 10px;
-        border-bottom: 1px solid rgba(255,255,255,0.04);
-    }
-
-    /* Intel actions */
-    .intel-actions-list { list-style: none; padding: 0; margin: 0; }
-    .intel-action-item {
-        display: flex; align-items: flex-start; gap: 8px;
-        padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.05);
-        font-size: 0.82rem; color: var(--text-secondary);
-    }
-    .intel-action-item i { color: var(--accent-primary); margin-top: 2px; flex-shrink: 0; }
-    .intel-action-item:last-child { border-bottom: none; }
-
-    /* What-If */
-    .whatif-toggle-row {
-        display: flex; justify-content: flex-end;
-        margin-top: 14px;
-    }
-    #whatif-toggle-btn {
-        background: rgba(99,102,241,0.15);
-        border: 1px solid rgba(99,102,241,0.35);
-        border-radius: 20px; padding: 8px 18px;
-        color: #a5b4fc; font-size: 0.82rem; cursor: pointer;
-        font-family: inherit; font-weight: 600;
-        display: flex; align-items: center; gap: 8px;
-        transition: background 0.2s, border-color 0.2s;
-    }
-    #whatif-toggle-btn:hover, #whatif-toggle-btn.active {
-        background: rgba(99,102,241,0.30);
-        border-color: rgba(99,102,241,0.6);
-        color: #fff;
-    }
-    #whatif-panel {
-        display: none;
-        margin-top: 16px;
-        padding: 18px;
-        background: rgba(99,102,241,0.07);
-        border: 1px solid rgba(99,102,241,0.2);
-        border-radius: 14px;
-    }
-    .wi-title {
-        font-size: 0.8rem; font-weight: 700; letter-spacing: 0.08em;
-        color: #a5b4fc; margin-bottom: 14px;
-        display: flex; align-items: center; gap: 8px;
-    }
-    .wi-metrics-grid {
-        display: grid; grid-template-columns: repeat(2,1fr); gap: 10px;
-    }
-    .wi-metric-box {
-        background: rgba(255,255,255,0.04);
-        border-radius: 10px; padding: 12px 14px;
-    }
-    .wi-metric-label { font-size: 0.7rem; color: var(--text-muted); margin-bottom: 4px; }
-    .wi-metric-val   { font-size: 1.3rem; font-weight: 700; color: #fff; font-family: 'Outfit', sans-serif; }
-    .wi-delta {
-        font-size: 0.72rem; font-weight: 700; margin-top: 2px; display: block;
-    }
-    .delta-bad  { color: #ff1744; }
-    .delta-good { color: #00e676; }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NetGuard NOC — Mission Control Command Center</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <div class="app-container">
-        <!-- Sidebar Navigation -->
-        <aside class="sidebar">
-            <div class="logo-area">
-                <i class="fa-solid fa-shield-halved logo-icon"></i>
-                <div class="logo-text">
-                    <span class="brand-name">NETGUARD</span>
-                    <span class="brand-sub">NOC Diagnostics</span>
-                </div>
-            </div>
-            
-            <nav class="nav-menu">
-                <button class="nav-item active" data-tab="diagnostics-tab">
-                    <i class="fa-solid fa-gauge-high"></i>
-                    <span>Telemetry Diagnostics</span>
-                </button>
-                <button class="nav-item" data-tab="topology-tab">
-                    <i class="fa-solid fa-network-wired"></i>
-                    <span>Network Topology</span>
-                </button>
-                <button class="nav-item" data-tab="analytics-tab">
-                    <i class="fa-solid fa-chart-pie"></i>
-                    <span>Network Analytics</span>
-                </button>
-                <button class="nav-item" data-tab="models-tab">
-                    <i class="fa-solid fa-brain"></i>
-                    <span>Model Registry</span>
-                </button>
-                <button class="nav-item" data-tab="intelligence-tab">
-                    <i class="fa-solid fa-atom"></i>
-                    <span>Intelligence Hub</span>
-                </button>
-            </nav>
-
-            <div class="sidebar-footer">
-                <div class="status-indicator">
-                    <span class="pulse-dot"></span>
-                    <span class="status-text">SYS ONLINE</span>
-                </div>
-                <div class="model-badge">
-                    <i class="fa-solid fa-microchip"></i>
-                    <span id="active-model-sidebar">Loading ML...</span>
-                </div>
-            </div>
-        </aside>
-
-        <!-- Main Content Area -->
-        <main class="main-content">
-            <!-- Top Dashboard Stats Bar -->
-            <header class="top-bar">
-                <div class="page-title-section">
-                    <h1 id="page-title">Device diagnostics</h1>
-                    <p class="page-subtitle">Real-time telemetry inference & predictive maintenance advisory</p>
-                </div>
-                <div class="stats-summary-grid">
-                    <div class="mini-stat-card">
-                        <span class="stat-label">Total Devices</span>
-                        <span class="stat-val" id="stat-total-devices">10,000</span>
-                    </div>
-                    <div class="mini-stat-card">
-                        <span class="stat-label">Healthy Rate</span>
-                        <span class="stat-val accent" id="stat-health-rate">88.5%</span>
-                    </div>
-                    <div class="mini-stat-card">
-                        <span class="stat-label">Failed Devices</span>
-                        <span class="stat-val warning" id="stat-failed-count">1,150</span>
-                    </div>
-                </div>
-            </header>
-
-            <!-- TAB 1: Diagnostics -->
-            <section id="diagnostics-tab" class="tab-content active">
-                <div class="diagnostics-grid">
-                    <!-- Telemetry Inputs Card -->
-                    <div class="card glass-card form-card">
-                        <div class="card-header">
-                            <h2 class="card-title"><i class="fa-solid fa-sliders"></i> Telemetry Parameters</h2>
-                            <p class="card-desc">Adjust device indicators manually or choose a preset configuration.</p>
-                        </div>
-                        
-                        <!-- Quick Presets -->
-                        <div class="presets-section">
-                            <span class="presets-title">Quick Presets:</span>
-                            <div class="presets-container">
-                                <button class="preset-btn" data-preset="healthy-router">Healthy Router</button>
-                                <button class="preset-btn" data-preset="healthy-switch">Healthy Switch</button>
-                                <button class="preset-btn" data-preset="high-cpu">High CPU Load</button>
-                                <button class="preset-btn" data-preset="thermal-alert">Thermal Alert</button>
-                                <button class="preset-btn" data-preset="packet-loss">Packet Loss Alert</button>
-                                <button class="preset-btn" data-preset="critical-failure">Critical Threat</button>
-                                <button class="reset-action-btn" id="reset-btn" title="Reset parameters to standard values"><i class="fa-solid fa-arrow-rotate-left"></i> Reset Defaults</button>
-                            </div>
-                        </div>
-
-                        <form id="telemetry-form" class="telemetry-form">
-                            <!-- Device Type -->
-                            <div class="form-group row-group">
-                                <label class="field-label">Device Type</label>
-                                <div class="toggle-switch-container">
-                                    <input type="radio" id="type-router" name="Device_Type" value="Router" checked>
-                                    <label for="type-router" class="toggle-label toggle-left">Router</label>
-                                    
-                                    <input type="radio" id="type-switch" name="Device_Type" value="Switch">
-                                    <label for="type-switch" class="toggle-label toggle-right">Switch</label>
-                                </div>
-                            </div>
-
-                            <!-- CPU Usage -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="cpu_usage"><i class="fa-solid fa-microchip"></i> CPU Usage</label>
-                                    <span class="slider-value"><span id="cpu_val">50</span>%</span>
-                                </div>
-                                <input type="range" id="cpu_usage" name="CPU_Usage" min="10" max="100" step="0.5" value="50">
-                            </div>
-
-                            <!-- Memory Usage -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="memory_usage"><i class="fa-solid fa-memory"></i> Memory Usage</label>
-                                    <span class="slider-value"><span id="memory_val">60</span>%</span>
-                                </div>
-                                <input type="range" id="memory_usage" name="Memory_Usage" min="20" max="100" step="0.5" value="60">
-                            </div>
-
-                            <!-- Temperature -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="temperature"><i class="fa-solid fa-temperature-half"></i> Temperature</label>
-                                    <span class="slider-value"><span id="temperature_val">45</span>°C</span>
-                                </div>
-                                <input type="range" id="temperature" name="Temperature" min="25" max="90" step="0.5" value="45">
-                            </div>
-
-                            <!-- Uptime -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="uptime"><i class="fa-solid fa-clock"></i> Device Uptime</label>
-                                    <span class="slider-value"><span id="uptime_val">100</span> days</span>
-                                </div>
-                                <input type="range" id="uptime" name="Uptime" min="1" max="1000" step="1" value="100">
-                            </div>
-
-                            <!-- Interface Errors -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="interface_errors"><i class="fa-solid fa-triangle-exclamation"></i> Interface Errors</label>
-                                    <span class="slider-value"><span id="errors_val">10</span> errors</span>
-                                </div>
-                                <input type="range" id="interface_errors" name="Interface_Errors" min="0" max="500" step="1" value="10">
-                            </div>
-
-                            <!-- Packet Loss -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="packet_loss"><i class="fa-solid fa-circle-nodes"></i> Packet Loss</label>
-                                    <span class="slider-value"><span id="loss_val">0.5</span>%</span>
-                                </div>
-                                <input type="range" id="packet_loss" name="Packet_Loss" min="0" max="10" step="0.1" value="0.5">
-                            </div>
-
-                            <!-- Bandwidth Usage -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="bandwidth_usage"><i class="fa-solid fa-network-wired"></i> Bandwidth Usage</label>
-                                    <span class="slider-value"><span id="bandwidth_val">40</span>%</span>
-                                </div>
-                                <input type="range" id="bandwidth_usage" name="Bandwidth_Usage" min="10" max="100" step="0.5" value="40">
-                            </div>
-
-                            <!-- Log Errors -->
-                            <div class="form-group">
-                                <div class="slider-header">
-                                    <label for="log_errors"><i class="fa-solid fa-file-invoice"></i> System Log Errors</label>
-                                    <span class="slider-value"><span id="log_val">2</span> log errors</span>
-                                </div>
-                                <input type="range" id="log_errors" name="Log_Errors" min="0" max="100" step="1" value="2">
-                            </div>
-                        </form>
-                    </div>
-
-                    <!-- Prediction Results Card -->
-                    <div class="results-column">
-                        <!-- Result Indicator Card -->
-                        <div class="card glass-card result-card">
-                            <div class="card-header centered">
-                                <h2 class="card-title">Diagnostics Assessment</h2>
-                            </div>
-                            
-                            <!-- Gauge -->
-                            <div class="gauge-wrapper">
-                                <svg class="gauge-svg" viewBox="0 0 100 100">
-                                    <circle class="gauge-track" cx="50" cy="50" r="40"></circle>
-                                    <circle class="gauge-fill" id="gauge-fill-circle" cx="50" cy="50" r="40" stroke-dasharray="251.2" stroke-dashoffset="251.2"></circle>
-                                </svg>
-                                <div class="gauge-center">
-                                    <span class="gauge-percent" id="result-percent">0.00%</span>
-                                    <span class="gauge-label">Failure Prob</span>
-                                </div>
-                            </div>
-
-                            <!-- Risk Status Badge -->
-                            <div class="risk-badge" id="risk-badge-element">
-                                <i class="fa-solid fa-circle-check" id="risk-icon"></i>
-                                <span id="risk-text">LOW RISK</span>
-                            </div>
-
-                            <!-- Diagnosis & Anomaly Pill Indicators -->
-                            <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
-                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:6px 12px;font-size:0.75rem;display:flex;align-items:center;gap:6px;">
-                                    <span style="color:var(--text-muted);">Diagnosis:</span>
-                                    <strong id="failure-type-display" style="color:#00e676;">NONE</strong>
-                                </div>
-                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:6px 12px;font-size:0.75rem;display:flex;align-items:center;gap:6px;">
-                                    <span style="color:var(--text-muted);">Anomaly Score:</span>
-                                    <strong id="anomaly-score-val" style="color:#a5b4fc;">0.0%</strong>
-                                    <span id="anomaly-flag-badge" class="badge healthy-badge" style="font-size:0.65rem;padding:2px 6px;">NORMAL</span>
-                                </div>
-                            </div>
-
-                            <!-- Status Description -->
-                            <p class="status-summary" id="result-status-summary" style="margin-top:10px;">
-                                Adjust parameters or click a preset to fetch predictions.
-                            </p>
-                            <p id="failure-desc-display" style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:4px;font-style:italic;"></p>
-                        </div>
-
-                        <!-- Recommendations Card -->
-                        <div class="card glass-card advisory-card">
-                            <div class="card-header">
-                                <h2 class="card-title"><i class="fa-solid fa-clipboard-list-check"></i> Preventive Recommendations</h2>
-                            </div>
-                            <ul class="advisory-list" id="advisory-list-element">
-                                <li class="advisory-item">
-                                    <i class="fa-solid fa-circle-info advisory-icon font-indigo"></i>
-                                    <span class="advisory-text">All parameters healthy. Device is operating within design tolerances.</span>
-                                </li>
-                            </ul>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- What-If Toggle & Panel -->
-                <div class="whatif-toggle-row">
-                    <button id="whatif-toggle-btn">
-                        <i class="fa-solid fa-flask-vial"></i> What-If Simulator
-                    </button>
-                </div>
-                <div id="whatif-panel">
-                    <div class="wi-title">
-                        <i class="fa-solid fa-flask-vial"></i>
-                        WHAT-IF ANALYSIS — Slider values vs baseline prediction
-                    </div>
-                    <div class="wi-metrics-grid">
-                        <div class="wi-metric-box">
-                            <div class="wi-metric-label">Failure Probability</div>
-                            <div class="wi-metric-val" id="wi-prob-val">—</div>
-                            <span class="wi-delta" id="wi-delta-prob"></span>
-                        </div>
-                        <div class="wi-metric-box">
-                            <div class="wi-metric-label">Health Score</div>
-                            <div class="wi-metric-val" id="wi-health-val">—</div>
-                            <span class="wi-delta" id="wi-delta-health"></span>
-                        </div>
-                        <div class="wi-metric-box">
-                            <div class="wi-metric-label">Risk Level</div>
-                            <div class="wi-metric-val" id="wi-risk-val" style="font-size:1rem">—</div>
-                        </div>
-                        <div class="wi-metric-box">
-                            <div class="wi-metric-label">Estimated Window</div>
-                            <div class="wi-metric-val" id="wi-window-val" style="font-size:0.75rem;line-height:1.3">—</div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB: Network Topology -->
-            <section id="topology-tab" class="tab-content">
-                <div class="card glass-card wide-card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fa-solid fa-network-wired"></i> Interactive NOC Network Topology</h2>
-                        <p class="card-desc">Real-time status map of core routers, edge switches, and server nodes color-coded by health state.</p>
-                    </div>
-                    <div id="topology-map-container" style="min-height: 380px; background: rgba(15,23,42,0.6); border-radius: 12px; position: relative; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                        <svg id="topology-svg" viewBox="0 0 800 360" style="width: 100%; max-width: 800px; height: 360px;"></svg>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 2: Historical Analytics -->
-            <section id="analytics-tab" class="tab-content">
-                <div class="analytics-container">
-                    <div class="card glass-card wide-card">
-                        <div class="card-header">
-                            <h2 class="card-title"><i class="fa-solid fa-chart-line"></i> Exploratory Data Visualizations</h2>
-                            <p class="card-desc">Click on any chart to view it in full high-resolution lightbox view.</p>
-                        </div>
-                        
-                        <div class="plots-grid">
-                            <div class="plot-card" onclick="openLightbox('/api/plots/correlation_heatmap.png', 'Features Correlation Heatmap')">
-                                <div class="plot-img-container">
-                                    <img src="/api/plots/correlation_heatmap.png" alt="Correlation Heatmap" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
-                                </div>
-                                <div class="plot-info">
-                                    <h3>Correlation Heatmap</h3>
-                                    <p>Examine linear relationships and multicollinearity among network metrics.</p>
-                                </div>
-                            </div>
-
-                            <div class="plot-card" onclick="openLightbox('/api/plots/cpu_vs_failure.png', 'CPU Usage vs Failure Distribution')">
-                                <div class="plot-img-container">
-                                    <img src="/api/plots/cpu_vs_failure.png" alt="CPU vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
-                                </div>
-                                <div class="plot-info">
-                                    <h3>CPU vs Failure</h3>
-                                    <p>Boxplot comparing CPU core levels in healthy versus failing devices.</p>
-                                </div>
-                            </div>
-
-                            <div class="plot-card" onclick="openLightbox('/api/plots/memory_vs_failure.png', 'Memory Usage vs Failure Distribution')">
-                                <div class="plot-img-container">
-                                    <img src="/api/plots/memory_vs_failure.png" alt="Memory vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
-                                </div>
-                                <div class="plot-info">
-                                    <h3>Memory vs Failure</h3>
-                                    <p>Distribution of system RAM requirements during operational faults.</p>
-                                </div>
-                            </div>
-
-                            <div class="plot-card" onclick="openLightbox('/api/plots/temperature_vs_failure.png', 'Chassis Temperature vs Failure Distribution')">
-                                <div class="plot-img-container">
-                                    <img src="/api/plots/temperature_vs_failure.png" alt="Temperature vs Failure" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
-                                </div>
-                                <div class="plot-info">
-                                    <h3>Temperature vs Failure</h3>
-                                    <p>Chassis thermal values vs hardware failure thresholds.</p>
-                                </div>
-                            </div>
-
-                            <div class="plot-card" onclick="openLightbox('/api/plots/failure_distribution.png', 'Device Failure Balance Distribution')">
-                                <div class="plot-img-container">
-                                    <img src="/api/plots/failure_distribution.png" alt="Failure Distribution" onerror="this.src='https://placehold.co/600x400/161f30/ffffff?text=Run+EDA+First'">
-                                </div>
-                                <div class="plot-info">
-                                    <h3>Failure Distribution</h3>
-                                    <p>Relative counts of simulated failures versus nominal operating hardware.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 3: Model performance -->
-            <section id="models-tab" class="tab-content">
-                <div class="models-container">
-                    <div class="card glass-card wide-card">
-                        <div class="card-header">
-                            <h2 class="card-title"><i class="fa-solid fa-microchip"></i> Model Performance & Registry</h2>
-                            <p class="card-desc">Comparative analysis of trained machine learning classifiers. The active model is saved as a persistent serialized pipeline.</p>
-                        </div>
-
-                        <div class="table-wrapper">
-                            <table class="metrics-table">
-                                <thead>
-                                    <tr>
-                                        <th>Model Name</th>
-                                        <th>Accuracy</th>
-                                        <th>Precision</th>
-                                        <th>Recall</th>
-                                        <th>F1 Score</th>
-                                        <th>ROC-AUC</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr class="active-row-highlight" id="row-xgb">
-                                        <td class="model-name-td"><i class="fa-solid fa-bolt font-teal"></i> XGBoost Classifier</td>
-                                        <td>98.45%</td>
-                                        <td>94.12%</td>
-                                        <td>93.20%</td>
-                                        <td>93.66%</td>
-                                        <td>99.64%</td>
-                                        <td><span class="badge active-badge">ACTIVE MODEL</span></td>
-                                    </tr>
-                                    <tr id="row-rf">
-                                        <td class="model-name-td"><i class="fa-solid fa-tree font-indigo"></i> Random Forest</td>
-                                        <td>97.80%</td>
-                                        <td>92.50%</td>
-                                        <td>90.24%</td>
-                                        <td>91.36%</td>
-                                        <td>98.92%</td>
-                                        <td><span class="badge fallback-badge">CANDIDATE</span></td>
-                                    </tr>
-                                    <tr id="row-lr">
-                                        <td class="model-name-td"><i class="fa-solid fa-chart-line font-gray"></i> Logistic Regression</td>
-                                        <td>95.10%</td>
-                                        <td>84.62%</td>
-                                        <td>78.57%</td>
-                                        <td>81.48%</td>
-                                        <td>97.20%</td>
-                                        <td><span class="badge fallback-badge">CANDIDATE</span></td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="model-info-footer">
-                            <div class="info-alert-box">
-                                <i class="fa-solid fa-circle-info"></i>
-                                <span><strong>Selection Logic:</strong> The pipelines automatically evaluate multiple configurations on synthetic telemetry data. The best model is selected dynamically using <strong>F1 Score</strong> to prevent optimization bias on unbalanced target variables.</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </section>
-
-            <!-- TAB 4: Intelligence Hub -->
-            <section id="intelligence-tab" class="tab-content">
-                <div class="intelligence-grid">
-
-                <!-- LEFT column -->
-                <div class="intel-left">
-                <!-- Health Score Card -->
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fa-solid fa-heart-pulse"></i> Device Health Score</h2>
-                        <p class="card-desc">Weighted badness score derived from the same telemetry formula used to generate training labels.</p>
-                    </div>
-                    <div class="health-gauge-wrapper">
-                        <div class="health-gauge-rel">
-                            <svg class="health-svg" viewBox="0 0 100 100">
-                                <circle class="health-track" cx="50" cy="50" r="45"/>
-                                <circle class="health-arc" id="health-score-arc" cx="50" cy="50" r="45"/>
-                            </svg>
-                            <div class="health-center-text">
-                                <span class="health-score-num" id="health-score-value">—</span>
-                                <span class="health-score-sub">/ 100</span>
-                            </div>
-                        </div>
-                        <span class="health-score-label" id="health-score-label">PENDING</span>
-                    </div>
-                    <div class="risk-window-pill" id="risk-window-text">
-                        Run a diagnostic to see estimated failure window
-                    </div>
-                </div>
-
-                <!-- Recommended Actions Card -->
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fa-solid fa-list-check"></i> Recommended Actions</h2>
-                    </div>
-                    <ul class="intel-actions-list" id="intel-actions-list">
-                        <li class="intel-action-item">
-                            <i class="fa-solid fa-arrow-right-long"></i>
-                            <span>Run a diagnostic to see recommended actions.</span>
-                        </li>
-                    </ul>
-                </div>
-            </div>
-
-            <!-- RIGHT column -->
-            <div class="intel-right">
-                <!-- SHAP Explainability Card -->
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fa-solid fa-magnifying-glass-chart"></i> AI Explainability (SHAP)</h2>
-                        <p class="card-desc">Top features driving the failure probability — sorted by absolute SHAP contribution. Red = increases risk, green = decreases risk.</p>
-                    </div>
-                    <div class="shap-bars-container" id="shap-bars-container">
-                        <p class="shap-empty">Run a diagnostic from the Telemetry tab to load explanations.</p>
-                    </div>
-                </div>
-
-                <!-- Prediction History Card -->
-                <div class="card glass-card">
-                    <div class="card-header">
-                        <h2 class="card-title"><i class="fa-solid fa-chart-line"></i> Prediction History</h2>
-                        <p class="card-desc">Failure probability over the last 30 logged predictions. Each point colour reflects the risk level at that time.</p>
-                    </div>
-
-                    <div class="history-lookup-row">
-                        <input type="text" id="history-device-input"
-                               placeholder="Device ID (e.g. DEV-00042 or manual)"
-                               value="manual">
-                        <button id="history-lookup-btn">
-                            <i class="fa-solid fa-magnifying-glass"></i> Load
-                        </button>
-                    </div>
-
-                    <div id="history-chart-container"></div>
-                    <p id="history-empty-msg">No history yet for this device. Run diagnostics to populate.</p>
-
-                    <div class="history-table-wrapper">
-                        <table class="history-table">
-                            <thead>
-                                <tr>
-                                    <th>Timestamp</th>
-                                    <th>Failure Prob</th>
-                                    <th>Health Score</th>
-                                    <th>Risk</th>
-                                </tr>
-                            </thead>
-                            <tbody id="history-table-body"></tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
+  <div id="app-shell">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="brand-header">
+        <img src="logo.png" alt="NetGuard Logo" class="brand-logo-img">
+        <div>
+          <div class="brand-title">NETGUARD</div>
+          <div class="brand-subtitle">SMART NETWORKS | SAFER TOMORROW</div>
         </div>
-    </section>
+      </div>
 
-        </main>
-    </div>
-
-
-    <div id="lightbox" class="lightbox-modal" onclick="closeLightbox()">
-        <span class="close-lightbox">&times;</span>
-        <div class="lightbox-content-wrapper">
-            <img class="lightbox-img" id="lightbox-img">
-            <div id="lightbox-caption" class="lightbox-caption"></div>
+      <nav class="nav-menu">
+        <div class="nav-group-label">Command</div>
+        <div class="nav-item active" onclick="switchView('overview')">
+          <span class="icon">◉</span> Overview
         </div>
-    </div>
+        <div class="nav-item" onclick="switchView('topology')">
+          <span class="icon">◌</span> Topology
+        </div>
+        <div class="nav-item" onclick="switchView('devices')">
+          <span class="icon">◌</span> Devices
+        </div>
+        <div class="nav-item" onclick="switchView('incidents')">
+          <span class="icon">◌</span> Incidents
+        </div>
 
-    <script src="app.js"></script>
-    <script src="app_additions.js"></script>
+        <div class="nav-group-label">Intelligence</div>
+        <div class="nav-item" onclick="switchView('predictions')">
+          <span class="icon">⚡</span> Predictions
+        </div>
+        <div class="nav-item" onclick="switchView('anomalies')">
+          <span class="icon">⚡</span> Anomalies
+        </div>
+        <div class="nav-item" onclick="switchView('diagnostics')">
+          <span class="icon">⚡</span> Diagnostics
+        </div>
+
+        <div class="nav-group-label">Analytics</div>
+        <div class="nav-item" onclick="switchView('analytics')">
+          <span class="icon">📊</span> Fleet Analytics
+        </div>
+        <div class="nav-item" onclick="switchView('models')">
+          <span class="icon">📊</span> Model Registry
+        </div>
+
+        <div class="nav-group-label">System</div>
+        <div class="nav-item" onclick="switchView('discovery')">
+          <span class="icon">🔍</span> Discovery
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="engine-status-list">
+          <div class="engine-status-item">
+            <span><span class="dot-status"></span>Prediction Engine</span>
+            <span class="mono-text" style="color:var(--color-low)">ONLINE</span>
+          </div>
+          <div class="engine-status-item">
+            <span><span class="dot-status"></span>Discovery Engine</span>
+            <span class="mono-text" style="color:var(--color-low)">ONLINE</span>
+          </div>
+          <div class="engine-status-item">
+            <span><span class="dot-status"></span>Database</span>
+            <span class="mono-text" style="color:var(--color-low)">ONLINE</span>
+          </div>
+        </div>
+        <div style="font-size:10px; color:var(--text-dim); margin-top:8px; text-align:right;">
+          NetGuard NOC v2.0.0
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Wrapper -->
+    <div id="main-wrapper">
+      <!-- Top Header -->
+      <header id="top-header">
+        <div class="header-left">
+          <div class="status-pill">
+            <span class="dot-status"></span> NETWORK OPERATIONAL
+          </div>
+          <span class="mono-text" style="font-size:12px; color:var(--text-dim);" id="header-time-display">--:--:-- UTC</span>
+        </div>
+
+        <div class="header-right">
+          <button class="cmd-search-btn" onclick="openCommandPalette()">
+            <span>🔍 Search fleet or commands...</span>
+            <span class="kbd-badge">⌘K</span>
+          </button>
+          <div class="mono-text" style="font-size:12px; color:var(--text-muted);">
+            OPERATOR: <strong>KISHORE K V</strong>
+          </div>
+        </div>
+      </header>
+
+      <!-- View Container -->
+      <main id="view-container">
+        <!-- View 1: Overview -->
+        <section id="view-overview" class="content-view active">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Fleet Command Center</h1>
+              <p class="page-description">Continuous real-time failure prediction & anomaly monitoring across 500 devices</p>
+            </div>
+            <button id="btn-fleet-scan" class="btn-noc primary" onclick="triggerFleetPredict()">
+              <span id="btn-fleet-scan-icon">⚡</span> <span id="btn-fleet-scan-text">Run Fleet Scan</span>
+            </button>
+          </div>
+
+          <!-- Fleet Scan Progress Banner -->
+          <div id="fleet-scan-banner" style="display:none;"></div>
+
+
+          <!-- KPI Cards -->
+          <div class="grid-4">
+            <div class="noc-card">
+              <div class="card-title">Total Devices</div>
+              <div class="kpi-value mono-text" id="kpi-total">500</div>
+              <div class="kpi-subtext">Monitored Fleet Inventory</div>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Healthy State</div>
+              <div class="kpi-value mono-text" style="color:var(--color-low)" id="kpi-healthy">472</div>
+              <div class="kpi-subtext" id="kpi-healthy-pct">94.4% operational</div>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Elevated Risk</div>
+              <div class="kpi-value mono-text" style="color:var(--color-medium)" id="kpi-at-risk">18</div>
+              <div class="kpi-subtext">Medium risk devices</div>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Critical Impending</div>
+              <div class="kpi-value mono-text" style="color:var(--color-critical)" id="kpi-critical">10</div>
+              <div class="kpi-subtext">Failure within 12 hours</div>
+            </div>
+          </div>
+
+          <!-- Network Health Bar & Stacked Risk Bar -->
+          <div class="grid-3-1">
+            <div class="noc-card">
+              <div class="card-title">Network Health Index</div>
+              <div style="display:flex; align-items:baseline; justify-content:space-between;">
+                <span class="kpi-value mono-text" id="net-health-value">87.0 <span style="font-size:16px; color:var(--text-muted)">/ 100</span></span>
+                <span class="status-pill" id="net-health-status">OPERATIONAL</span>
+              </div>
+              <div class="health-bar-container">
+                <div class="health-bar-fill" id="net-health-fill" style="width: 87%"></div>
+              </div>
+              <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-dim);">
+                <span>0% Critical</span>
+                <span>50% Threshold</span>
+                <span>100% Nominal</span>
+              </div>
+            </div>
+
+            <div class="noc-card">
+              <div class="card-title">Fleet Risk Breakdown</div>
+              <div class="stacked-risk-bar" id="risk-stacked-bar">
+                <div class="seg-low" style="width: 90%"></div>
+                <div class="seg-medium" style="width: 5%"></div>
+                <div class="seg-high" style="width: 3%"></div>
+                <div class="seg-critical" style="width: 2%"></div>
+              </div>
+              <div style="font-size:11px; margin-top:10px; display:flex; flex-direction:column; gap:4px;">
+                <div style="display:flex; justify-content:space-between;"><span>🟢 LOW</span><span class="mono-text" id="count-low">472</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>🟡 MEDIUM</span><span class="mono-text" id="count-medium">18</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>🟠 HIGH</span><span class="mono-text" id="count-high">7</span></div>
+                <div style="display:flex; justify-content:space-between;"><span>🔴 CRITICAL</span><span class="mono-text" id="count-critical">3</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Top Predicted Failures Table -->
+          <div class="noc-card">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;">
+              <div class="card-title" style="margin:0;">Top Impending Device Failures (Next 12 Hours)</div>
+              <button class="btn-noc" onclick="switchView('predictions')">View All Predictions →</button>
+            </div>
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Device ID</th>
+                    <th>Hostname</th>
+                    <th>IP Address</th>
+                    <th>Risk Level</th>
+                    <th>12h Failure Prob</th>
+                    <th>Diagnosis</th>
+                    <th>Health Score</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="top-failures-tbody">
+                  <!-- Rendered via app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 2: Topology -->
+        <section id="view-topology" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Network Topology Map</h1>
+              <p class="page-description">Real-time dynamic device node hierarchy & uplink status visualization</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button class="btn-noc" onclick="loadTopologyData()">🔄 Refresh Topology</button>
+            </div>
+          </div>
+
+          <div class="noc-card">
+            <div id="topology-svg-container">
+              <svg id="topology-svg"></svg>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 3: Devices -->
+        <section id="view-devices" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Fleet Device Inventory</h1>
+              <p class="page-description">Search and inspect all 500 managed network device endpoints</p>
+            </div>
+            <input type="text" id="device-search-input" class="cmd-input" style="width:300px; padding:8px 12px; font-size:13px; border-radius:6px;" placeholder="Search hostname, IP, vendor..." onkeyup="filterDevicesTable()">
+          </div>
+
+          <div class="noc-card">
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Device ID</th>
+                    <th>Hostname</th>
+                    <th>IP Address</th>
+                    <th>Type</th>
+                    <th>Vendor</th>
+                    <th>Location</th>
+                    <th>Risk Status</th>
+                    <th>Failure Risk</th>
+                    <th>Health</th>
+                  </tr>
+                </thead>
+                <tbody id="devices-list-tbody">
+                  <!-- Rendered via app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 4: Incidents -->
+        <section id="view-incidents" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Active Incident Management</h1>
+              <p class="page-description">Deduplicated active alerts and NOC operational incident lifecycle</p>
+            </div>
+          </div>
+
+          <div class="noc-card">
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Incident ID</th>
+                    <th>Timestamp</th>
+                    <th>Device ID</th>
+                    <th>Severity</th>
+                    <th>Title & Message</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="incidents-tbody">
+                  <!-- Rendered via app.js -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 5: Predictions -->
+        <section id="view-predictions" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Failure Predictions Forecast</h1>
+              <p class="page-description">Machine learning predictive risk model outputs for next 12 hours</p>
+            </div>
+          </div>
+          <div class="noc-card">
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Device ID</th>
+                    <th>Hostname</th>
+                    <th>Risk</th>
+                    <th>Probability</th>
+                    <th>Diagnosis</th>
+                    <th>Confidence</th>
+                  </tr>
+                </thead>
+                <tbody id="predictions-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 6: Anomalies -->
+        <section id="view-anomalies" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Isolation Forest Anomaly Detection</h1>
+              <p class="page-description">Unsupervised telemetry anomaly index vs failure risk</p>
+            </div>
+          </div>
+          <div class="noc-card">
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Device ID</th>
+                    <th>Hostname</th>
+                    <th>Anomaly Index</th>
+                    <th>Failure Risk</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="anomalies-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 7: Analytics -->
+        <section id="view-analytics" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Fleet Intelligence Analytics</h1>
+              <p class="page-description">Failure mode distributions, vendor health, and location statistics</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="noc-card">
+              <div class="card-title">Failure Mode Distribution</div>
+              <div id="analytics-failure-types" style="padding:10px 0;"></div>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Device Type Distribution</div>
+              <div id="analytics-device-types" style="padding:10px 0;"></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 8: Discovery -->
+        <section id="view-discovery" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Network Subnet Discovery Scanner</h1>
+              <p class="page-description">Scan CIDR blocks and discover network endpoints</p>
+            </div>
+          </div>
+          <div class="noc-card" style="margin-bottom:20px;">
+            <div style="display:flex; gap:16px; align-items:flex-end;">
+              <div>
+                <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">TARGET CIDR SUBNET</label>
+                <input type="text" id="discovery-cidr-input" class="cmd-input" style="width:220px; padding:8px 12px; font-size:13px; border-radius:6px;" value="10.1.0.0/24">
+              </div>
+              <div>
+                <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">DISCOVERY MODE</label>
+                <select id="discovery-mode-select" class="btn-noc" style="padding:8px 12px;">
+                  <option value="SIMULATION">SIMULATION (Dataset Inventory)</option>
+                  <option value="LAB">LAB (ICMP/TCP Socket Probe)</option>
+                  <option value="PRODUCTION">PRODUCTION (SNMP v2c/v3 & REST API)</option>
+                </select>
+              </div>
+              <button id="btn-discovery-scan" class="btn-noc primary" style="padding:8px 16px;" onclick="runDiscoveryScan()">🔍 Start Discovery Scan</button>
+            </div>
+          </div>
+          <div class="noc-card">
+            <div class="card-title">Discovered Endpoints</div>
+            <div class="noc-table-wrapper">
+              <table class="noc-table">
+                <thead>
+                  <tr>
+                    <th>Device ID</th>
+                    <th>Hostname</th>
+                    <th>IP Address</th>
+                    <th>Type</th>
+                    <th>Vendor</th>
+                    <th>Model</th>
+                    <th>Protocol</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="discovery-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- View 9: Models -->
+        <section id="view-models" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Machine Learning Model Registry</h1>
+              <p class="page-description">Trained failure prediction models, validation reports, and feature schema</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="noc-card">
+              <div class="card-title">Supervised Failure Classifier</div>
+              <p style="font-size:13px; margin-bottom:8px;">Selected Algorithm: <strong style="color:var(--accent-cyan)">RandomForestClassifier</strong></p>
+              <p style="font-size:12px; color:var(--text-muted);">Target: <span class="mono-text">Failure_Next_12h</span></p>
+              <p style="font-size:12px; color:var(--text-muted);">Validation Strategy: <span class="mono-text">GroupShuffleSplit by Device_ID</span></p>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Validation Reports</div>
+              <p style="font-size:13px; margin-bottom:12px;">Automated evaluation report outputs generated after training:</p>
+              <div style="display:flex; gap:10px;">
+                <a href="/outputs/reports/model_report.json" target="_blank" class="btn-noc">📄 View JSON Report</a>
+                <a href="/outputs/reports/model_report.html" target="_blank" class="btn-noc primary">📊 View HTML Report</a>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- Slide-out Device Deep-Dive Drawer -->
+  <div id="device-drawer">
+    <div class="drawer-header">
+      <div>
+        <h2 id="drawer-device-id" class="mono-text" style="font-size:18px; color:var(--accent-cyan)">DEV-0001</h2>
+        <p id="drawer-hostname" style="font-size:12px; color:var(--text-muted)">core-router-0001</p>
+      </div>
+      <button class="drawer-close-btn" onclick="closeDeviceDrawer()">✕</button>
+    </div>
+    <div class="drawer-content" id="drawer-body">
+      <!-- Dynamic Drawer Content -->
+    </div>
+  </div>
+
+  <!-- Command Palette Modal -->
+  <div id="cmd-modal-overlay">
+    <div class="cmd-modal-box">
+      <input type="text" id="cmd-input" class="cmd-input" placeholder="Type a view or search device (e.g. Overview, Topology, DEV-0042)..." onkeyup="handleCmdSearch()">
+      <div class="cmd-results" id="cmd-results">
+        <div class="cmd-item" onclick="switchView('overview'); closeCommandPalette();"><span>◉ Overview Dashboard</span><span class="kbd-badge">View</span></div>
+        <div class="cmd-item" onclick="switchView('topology'); closeCommandPalette();"><span>○ Network Topology Map</span><span class="kbd-badge">View</span></div>
+        <div class="cmd-item" onclick="switchView('devices'); closeCommandPalette();"><span>📋 Fleet Device Inventory</span><span class="kbd-badge">View</span></div>
+        <div class="cmd-item" onclick="switchView('incidents'); closeCommandPalette();"><span>🚨 Active Incident Alerts</span><span class="kbd-badge">View</span></div>
+        <div class="cmd-item" onclick="switchView('discovery'); closeCommandPalette();"><span>🔍 Subnet Discovery Scanner</span><span class="kbd-badge">System</span></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>

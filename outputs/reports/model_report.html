@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>NetGuard NOC — ML Validation Report (netguard_noc_dataset_v1)</title>
+    <title>NetGuard NOC — ML Validation Report (Failure_Next_12h Target)</title>
     <style>
         body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; }
         h1, h2 { color: #38bdf8; }
@@ -13,34 +13,27 @@
     </style>
 </head>
 <body>
-    <h1>🛡️ NetGuard NOC — ML Model Validation Report (netguard_noc_dataset_v1)</h1>
-    <p>Generated: 2026-09-17T13:29:11.426854</p>
+    <h1>🛡️ NetGuard NOC — ML Model Validation Report</h1>
+    <p>Target: <strong>Failure_Next_12h</strong> | Generated: 2026-09-17T14:02:54.722358</p>
     
     <div class="card">
         <h2>Dataset & Validation Strategy</h2>
         <p><strong>Dataset:</strong> netguard_noc_dataset_v1</p>
         <p><strong>Total Records:</strong> 50,000 | <strong>Unique Devices:</strong> 500</p>
-        <p><strong>Validation Strategy:</strong> GroupShuffleSplit by Device_ID (80% train / 20% test)</p>
+        <p><strong>Validation Strategy:</strong> GroupShuffleSplit by Device_ID (80% train devices / 20% test devices)</p>
     </div>
 
     <div class="card">
-        <h2>Supervised Binary Failure Classifier</h2>
+        <h2>Supervised Binary Failure Classifier (Failure_Next_12h)</h2>
         <p><strong>Selected Model:</strong> <span class="badge">Random Forest</span></p>
         <table>
             <tr><th>Metric</th><th>Score</th></tr>
-            <tr><td>Accuracy</td><td>0.9947</td></tr>
-            <tr><td>Precision</td><td>0.1667</td></tr>
-            <tr><td>Recall</td><td>0.7692</td></tr>
-            <tr><td>F1 Score</td><td>0.2740</td></tr>
-            <tr><td>ROC-AUC</td><td>0.9959</td></tr>
+            <tr><td>Accuracy</td><td>0.9959</td></tr>
+            <tr><td>Precision</td><td>0.2195</td></tr>
+            <tr><td>Recall</td><td>0.6923</td></tr>
+            <tr><td>F1 Score</td><td>0.3333</td></tr>
+            <tr><td>ROC-AUC</td><td>0.9944</td></tr>
         </table>
-    </div>
-
-    <div class="card">
-        <h2>Supervised Diagnostic Classifier (Failure Mode)</h2>
-        <p><strong>Methodology:</strong> Trained exclusively on Failed == 1 instances (No Label Leakage)</p>
-        <p><strong>Classes:</strong> CONGESTION, HARDWARE, INTERFACE, MEMORY, THERMAL</p>
-        <p><strong>Diagnostic Accuracy:</strong> 1.0000 | <strong>Weighted F1:</strong> 1.0000</p>
     </div>
 </body>
 </html>

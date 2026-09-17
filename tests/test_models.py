@@ -11,9 +11,11 @@ if os.path.join(BASE_DIR, 'src') not in sys.path:
 MODEL_PATH = "models/failure_model.pkl"
 DIAGNOSTIC_PATH = "models/diagnostic_model.pkl"
 
+
 def test_model_files_exist():
     assert os.path.exists(MODEL_PATH)
     assert os.path.exists(DIAGNOSTIC_PATH)
+
 
 def test_binary_model_inference():
     model = joblib.load(MODEL_PATH)
@@ -27,6 +29,7 @@ def test_binary_model_inference():
         "Packet_Loss": 4.0,
         "Bandwidth_Usage": 80.0,
         "Log_Errors": 10,
+        "Syslog_Critical_Count": 2,
         "CPU_5step_avg": 85.0,
         "Memory_5step_avg": 80.0,
         "Temperature_5step_avg": 75.0,

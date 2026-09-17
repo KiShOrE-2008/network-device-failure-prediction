@@ -1,12 +1,13 @@
+import os
+import json
 import pytest
 import sys
-import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.join(BASE_DIR, 'src') not in sys.path:
-    sys.path.insert(0, os.path.join(BASE_DIR, 'src'))
+sys.path.insert(0, os.path.join(BASE_DIR, 'src'))
 
 from web_app import app
+
 
 @pytest.fixture
 def client():
@@ -14,30 +15,52 @@ def client():
     with app.test_client() as client:
         yield client
 
-def test_api_stats(client):
-    res = client.get('/api/stats')
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["success"] is True
 
-def test_api_predict(client):
-    payload = {
-        "device_id": "TEST-DEV-01",
-        "Device_Type": "Router",
-        "CPU_Usage": 85.0,
-        "Memory_Usage": 80.0,
-        "Temperature": 75.0
-    }
-    res = client.post('/api/predict', json=payload)
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["success"] is True
-    assert "probability" in data
-    assert "risk" in data
+def test_api_fleet_predictions(client):
+    response = client.get('/api/fleet/predictions')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert len(data['predictions']) == 500
 
-def test_api_topology(client):
-    res = client.get('/api/topology')
-    assert res.status_code == 200
-    data = res.get_json()
-    assert data["success"] is True
-    assert "nodes" in data
+
+def test_api_fleet_stats(client):
+    response = client.get('/api/fleet/stats')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert 'network_health_score' in data
+    assert 'total_devices' in data
+
+
+def test_api_fleet_health(client):
+    response = client.get('/api/fleet/health')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert 'score' in data
+    assert 'status' in data
+
+
+def test_api_devices_list(client):
+    response = client.get('/api/devices')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert len(data['devices']) >= 500
+
+
+def test_api_device_detail(client):
+    response = client.get('/api/devices/DEV-0001')
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert data['device']['device_id'] == 'DEV-0001'
+
+
+def test_api_discovery_scan(client):
+    response = client.post('/api/discovery/scan', json={"cidr": "10.1.0.0/24", "mode": "SIMULATION"})
+    assert response.status_code == 200
+    data = response.get_json()
+    assert data['success'] is True
+    assert data['discovered_count'] >= 42

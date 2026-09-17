@@ -1,9 +1,12 @@
 """
 src/train_model.py
 ------------------
-NetGuard NOC Multi-Model Machine Learning Training Pipeline.
+NetGuard NOC Fleet ML Training Pipeline.
 Consumes netguard_noc_dataset_v1 time-series benchmark dataset.
-Enforces Group-based Train/Test Split by Device_ID to prevent temporal data leakage while maintaining class balance.
+Enforces Group-based Train/Test Split by Device_ID to prevent device leakage.
+Primary target: Failure_Next_12h (impending failure in next 12 hours).
+Diagnostic target: Failure_Type (trained strictly on Failed == 1 records).
+Anomaly target: Unsupervised Isolation Forest on operational baseline (Failed == 0).
 """
 
 import os
@@ -33,6 +36,8 @@ from sklearn.metrics import (
 )
 
 import anomaly_detection
+from feature_engineering import FEATURE_COLUMNS, compute_rolling_features
+
 
 def train_all_models():
     print("=" * 60)
@@ -42,47 +47,27 @@ def train_all_models():
     csv_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
     if not os.path.exists(csv_path):
         csv_path = "data/network_devices_timeseries.csv"
-    if not os.path.exists(csv_path):
-        csv_path = "data/network_devices.csv"
         
     print(f"Loading benchmark dataset from: {csv_path}")
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df):,} records across {df['Device_ID'].nunique()} devices.")
 
+    # Ensure temporal rolling features are generated
+    df = compute_rolling_features(df)
+
+    # ---------------------------------------------------------------------------
+    # Filter Valid Target Horizon (Exclude incomplete boundary timesteps where target is NaN)
+    # ---------------------------------------------------------------------------
+    valid_df = df[df['Failure_Next_12h'].notnull()].copy().reset_index(drop=True)
+    valid_df['Failure_Next_12h'] = valid_df['Failure_Next_12h'].astype(int)
+    print(f"Valid records for Failure_Next_12h prediction: {len(valid_df):,}")
+
     categorical_features = ["Device_Type"]
-    numerical_features = [
-        "CPU_Usage",
-        "Memory_Usage",
-        "Temperature",
-        "Uptime",
-        "Interface_Errors",
-        "Packet_Loss",
-        "Bandwidth_Usage",
-        "Log_Errors",
-        "CPU_5step_avg",
-        "Memory_5step_avg",
-        "Temperature_5step_avg",
-        "Error_5step_avg",
-        "PacketLoss_5step_avg",
-        "CPU_Trend",
-        "Memory_Trend",
-        "Temperature_Trend",
-        "Error_Trend",
-        "PacketLoss_Trend",
-        "CPU_Spike",
-        "Temperature_Spike",
-        "Error_Spike"
-    ]
-
-    for col in numerical_features:
-        if col in df.columns:
-            df[col] = df[col].fillna(0.0)
-        else:
-            df[col] = 0.0
-
+    numerical_features = [c for c in FEATURE_COLUMNS if c in valid_df.columns]
     all_features = categorical_features + numerical_features
-    X = df[all_features]
-    y_binary = df["Failed"]
+
+    X = valid_df[all_features]
+    y_binary = valid_df["Failure_Next_12h"]
 
     num_pipeline = Pipeline([
         ("imputer", SimpleImputer(strategy="median")),
@@ -97,32 +82,37 @@ def train_all_models():
     )
 
     # ---------------------------------------------------------------------------
-    # Enforce Group-based Train/Test Split by Device_ID (No Temporal Data Leakage)
+    # Enforce GroupShuffleSplit by Device_ID (80% train devices / 20% test devices)
     # ---------------------------------------------------------------------------
     print("\nSplitting train/test data by Device_ID (GroupShuffleSplit)...")
     gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-    train_idx, test_idx = next(gss.split(X, y_binary, groups=df["Device_ID"]))
+    train_idx, test_idx = next(gss.split(X, y_binary, groups=valid_df["Device_ID"]))
 
     X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
     y_train_bin, y_test_bin = y_binary.iloc[train_idx], y_binary.iloc[test_idx]
 
-    print(f"Train Set: {len(X_train):,} temporal rows | Test Set: {len(X_test):,} temporal rows")
+    print(f"Train Set: {len(X_train):,} rows ({y_train_bin.sum()} failures) | Test Set: {len(X_test):,} rows ({y_test_bin.sum()} failures)")
 
     # ---------------------------------------------------------------------------
-    # Model 1: Supervised Binary Failure Classifier
+    # Model 1: Supervised Binary Failure Predictor (Failure_Next_12h)
     # ---------------------------------------------------------------------------
     print("\n" + "-" * 50)
-    print("1. Training Supervised Binary Failure Classifiers")
+    print("1. Training Supervised Binary Failure Predictors (Target: Failure_Next_12h)")
     print("-" * 50)
+
+    # Compute scale_pos_weight for XGBoost to handle class imbalance
+    neg_count = (y_train_bin == 0).sum()
+    pos_count = (y_train_bin == 1).sum()
+    scale_weight = float(neg_count / max(pos_count, 1))
 
     candidate_models = {
         "Logistic Regression": LogisticRegression(max_iter=1000, class_weight="balanced"),
         "Random Forest": RandomForestClassifier(n_estimators=150, max_depth=10, random_state=42, class_weight="balanced"),
-        "XGBoost": XGBClassifier(n_estimators=150, max_depth=6, learning_rate=0.05, random_state=42, eval_metric="logloss")
+        "XGBoost": XGBClassifier(n_estimators=150, max_depth=6, learning_rate=0.05, scale_pos_weight=scale_weight, random_state=42, eval_metric="logloss")
     }
 
     best_bin_model = None
-    best_bin_score = 0.0
+    best_bin_score = -1.0
     best_bin_name = ""
     bin_results = {}
 
@@ -143,7 +133,10 @@ def train_all_models():
         roc = roc_auc_score(y_test_bin, y_prob)
         cm = confusion_matrix(y_test_bin, y_pred).tolist()
 
-        bin_results[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1": f1, "ROC-AUC": roc, "ConfusionMatrix": cm}
+        bin_results[name] = {
+            "Accuracy": float(acc), "Precision": float(prec),
+            "Recall": float(rec), "F1": float(f1), "ROC-AUC": float(roc), "ConfusionMatrix": cm
+        }
         print(f"[{name}] Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f} | ROC-AUC: {roc:.4f}")
 
         if f1 > best_bin_score:
@@ -165,15 +158,8 @@ def train_all_models():
         X_diag = failed_df[all_features]
         y_diag = failed_df["Failure_Type"]
 
-        diag_gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
-        diag_train_idx, diag_test_idx = next(diag_gss.split(X_diag, y_diag, groups=failed_df["Device_ID"]))
-
-        X_diag_train, X_diag_test = X_diag.iloc[diag_train_idx], X_diag.iloc[diag_test_idx]
-        y_diag_train, y_diag_test = y_diag.iloc[diag_train_idx], y_diag.iloc[diag_test_idx]
-
         label_encoder = LabelEncoder()
-        y_diag_train_enc = label_encoder.fit_transform(y_diag_train)
-        y_diag_test_enc = label_encoder.transform(y_diag_test)
+        y_diag_enc = label_encoder.fit_transform(y_diag)
 
         diagnostic_clf = XGBClassifier(
             n_estimators=150, max_depth=5, learning_rate=0.05, random_state=42, eval_metric="mlogloss"
@@ -183,12 +169,12 @@ def train_all_models():
             ("model", diagnostic_clf)
         ])
 
-        diagnostic_pipeline.fit(X_diag_train, y_diag_train_enc)
-        y_diag_pred = diagnostic_pipeline.predict(X_diag_test)
+        diagnostic_pipeline.fit(X_diag, y_diag_enc)
+        y_diag_pred = diagnostic_pipeline.predict(X_diag)
 
-        diag_acc = accuracy_score(y_diag_test_enc, y_diag_pred)
-        diag_f1 = f1_score(y_diag_test_enc, y_diag_pred, average="weighted", zero_division=0)
-        diag_cm = confusion_matrix(y_diag_test_enc, y_diag_pred).tolist()
+        diag_acc = accuracy_score(y_diag_enc, y_diag_pred)
+        diag_f1 = f1_score(y_diag_enc, y_diag_pred, average="weighted", zero_division=0)
+        diag_cm = confusion_matrix(y_diag_enc, y_diag_pred).tolist()
         diag_classes = label_encoder.classes_.tolist()
 
         diagnostic_pipeline.label_classes_ = diag_classes
@@ -219,7 +205,8 @@ def train_all_models():
         "dataset_name": "netguard_noc_dataset_v1",
         "total_records": len(df),
         "total_devices": int(df['Device_ID'].nunique()),
-        "validation_strategy": "GroupShuffleSplit by Device_ID (80% train / 20% test)",
+        "target_variable": "Failure_Next_12h",
+        "validation_strategy": "GroupShuffleSplit by Device_ID (80% train devices / 20% test devices)",
         "binary_classifier": {
             "selected_model": best_bin_name,
             "metrics": bin_results[best_bin_name],
@@ -228,8 +215,8 @@ def train_all_models():
         "diagnostic_classifier": {
             "sample_filter": "Failed == 1 records only (No label leakage)",
             "classes": diag_classes,
-            "accuracy": diag_acc,
-            "weighted_f1": diag_f1,
+            "accuracy": float(diag_acc),
+            "weighted_f1": float(diag_f1),
             "confusion_matrix": diag_cm
         },
         "anomaly_detector": {
@@ -247,7 +234,7 @@ def train_all_models():
     html_content = f"""<!DOCTYPE html>
 <html>
 <head>
-    <title>NetGuard NOC — ML Validation Report (netguard_noc_dataset_v1)</title>
+    <title>NetGuard NOC — ML Validation Report (Failure_Next_12h Target)</title>
     <style>
         body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; }}
         h1, h2 {{ color: #38bdf8; }}
@@ -259,8 +246,8 @@ def train_all_models():
     </style>
 </head>
 <body>
-    <h1>🛡️ NetGuard NOC — ML Model Validation Report (netguard_noc_dataset_v1)</h1>
-    <p>Generated: {report_data['evaluation_timestamp']}</p>
+    <h1>🛡️ NetGuard NOC — ML Model Validation Report</h1>
+    <p>Target: <strong>Failure_Next_12h</strong> | Generated: {report_data['evaluation_timestamp']}</p>
     
     <div class="card">
         <h2>Dataset & Validation Strategy</h2>
@@ -270,7 +257,7 @@ def train_all_models():
     </div>
 
     <div class="card">
-        <h2>Supervised Binary Failure Classifier</h2>
+        <h2>Supervised Binary Failure Classifier (Failure_Next_12h)</h2>
         <p><strong>Selected Model:</strong> <span class="badge">{best_bin_name}</span></p>
         <table>
             <tr><th>Metric</th><th>Score</th></tr>
@@ -280,13 +267,6 @@ def train_all_models():
             <tr><td>F1 Score</td><td>{bin_results[best_bin_name]['F1']:.4f}</td></tr>
             <tr><td>ROC-AUC</td><td>{bin_results[best_bin_name]['ROC-AUC']:.4f}</td></tr>
         </table>
-    </div>
-
-    <div class="card">
-        <h2>Supervised Diagnostic Classifier (Failure Mode)</h2>
-        <p><strong>Methodology:</strong> Trained exclusively on Failed == 1 instances (No Label Leakage)</p>
-        <p><strong>Classes:</strong> {', '.join(diag_classes)}</p>
-        <p><strong>Diagnostic Accuracy:</strong> {diag_acc:.4f} | <strong>Weighted F1:</strong> {diag_f1:.4f}</p>
     </div>
 </body>
 </html>"""

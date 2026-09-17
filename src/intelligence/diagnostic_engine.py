@@ -1,92 +1,120 @@
-"""
-src/intelligence/diagnostic_engine.py
-------------------------------------
-Rule-based & ML hybrid Diagnostic Engine for NetGuard NOC.
-Provides multi-mode failure diagnosis, root-cause narrative, and targeted remediation steps.
-"""
+import os
+import joblib
+import pandas as pd
+import numpy as np
 
-from typing import Dict, Any, List
+FAILURE_MODES = ["NONE", "THERMAL", "MEMORY", "INTERFACE", "CONGESTION", "HARDWARE"]
 
-FAILURE_MODE_DESCRIPTIONS = {
-    "THERMAL": "Thermal overload detected. Elevated chassis temperature combined with fan degradation risk.",
-    "MEMORY": "Memory exhaustion detected. Creeping memory utilization pattern consistent with system memory leak.",
-    "INTERFACE": "Physical interface failure detected. Accumulating CRC errors and packet loss indicate cable or SFP transceiver defect.",
-    "CONGESTION": "Network congestion & buffer bloat detected. Bandwidth saturation and high packet loss degrading performance.",
-    "HARDWARE": "Intermittent hardware degradation detected. High uptime and backplane/bus log errors indicate component instability.",
-    "NONE": "Device operating within normal operational parameters."
-}
-
-ACTION_RECOMMENDATIONS = {
+RECOMMENDED_ACTIONS = {
     "THERMAL": [
-        "Inspect chassis cooling fans and clear dust filters immediately.",
-        "Check rack ambient temperature and air circulation flow.",
-        "Redistribute CPU-intensive routing processes to alternate node."
+        "Inspect chassis cooling fans and airflow vents for dust or blockage",
+        "Verify ambient datacenter / rack HVAC operating temperature",
+        "Review CPU-intensive control plane processes and throttle background diagnostics",
+        "Check rack thermal metrics and schedule emergency maintenance if temp exceeds 85°C"
     ],
     "MEMORY": [
-        "Inspect memory pool breakdown for leaked process buffers.",
-        "Schedule a controlled preventive reboot to flush system memory.",
-        "Verify firmware patch release notes for memory leak hotfixes."
+        "Review memory utilization trends and detect process memory leaks",
+        "Inspect buffer allocation pools and active BGP/OSPF route tables",
+        "Terminate non-critical monitoring agents or reload stale daemon processes",
+        "Schedule maintenance reboot or memory module replacement if leak persists"
     ],
     "INTERFACE": [
-        "Clean or replace physical fiber SFP transceiver module.",
-        "Inspect patch cable connection and check interface duplex/speed settings.",
-        "Run digital optical monitoring (DOM) diagnostic tests."
+        "Inspect physical transceiver (SFP/QSFP) optical signal levels and Tx/Rx power",
+        "Check physical Ethernet/fiber cable connections and patch panel integrity",
+        "Review switch port CRC/FCS error counters and duplex mismatch settings",
+        "Replace degraded optical transceiver or swap port interface"
     ],
     "CONGESTION": [
-        "Enforce rate-limiting or QoS traffic shaping policies.",
-        "Reroute non-critical traffic paths via secondary egress link.",
-        "Evaluate interface bandwidth upgrade options."
+        "Review interface bandwidth utilization and ingress/egress queue drop counters",
+        "Inspect top talkers and netflow traffic statistics for micro-bursts",
+        "Apply Quality of Service (QoS) rate-limiting or traffic shaping policies",
+        "Reroute non-critical traffic over redundant uplink paths"
     ],
     "HARDWARE": [
-        "Perform chassis hardware diagnostic self-test.",
-        "Prepare hot-standby failover device for immediate swap.",
-        "Contact vendor support for replacement chassis module."
+        "Inspect hardware system error logs and PCIe bus fault alerts",
+        "Verify power supply unit (PSU) redundancy and voltage status",
+        "Perform diagnostic POST check and verify ASIC sensor operational state",
+        "Prepare hot-standby unit and initiate hardware replacement ticket"
     ],
     "NONE": [
-        "No corrective action required. Maintain standard NOC monitoring routine."
+        "Device operating within normal nominal parameters",
+        "Maintain standard preventive maintenance schedule"
     ]
 }
 
-def diagnose_failure_mode(
-    telemetry: Dict[str, Any],
-    ml_predicted_type: str = "NONE",
-    failure_prob: float = 0.0
-) -> Dict[str, Any]:
-    """
-    Combines ML classification output with deterministic rules for failure diagnosis.
-    """
-    cpu = float(telemetry.get("CPU_Usage", 0))
-    mem = float(telemetry.get("Memory_Usage", 0))
-    temp = float(telemetry.get("Temperature", 0))
-    iface_err = float(telemetry.get("Interface_Errors", 0))
-    loss = float(telemetry.get("Packet_Loss", 0))
-    bw = float(telemetry.get("Bandwidth_Usage", 0))
-    
-    # Rule-based mode evaluation if probability is significant
-    rule_mode = "NONE"
-    if failure_prob > 0.35 or temp > 75 or mem > 85 or iface_err > 50 or loss > 3.0:
-        if temp > 78.0 and cpu > 70.0:
-            rule_mode = "THERMAL"
-        elif mem > 88.0:
-            rule_mode = "MEMORY"
-        elif iface_err > 40 or loss > 4.0:
-            rule_mode = "INTERFACE"
-        elif bw > 88.0 and loss > 2.0:
-            rule_mode = "CONGESTION"
-        elif float(telemetry.get("Uptime", 0)) > 300 and float(telemetry.get("Log_Errors", 0)) > 15:
-            rule_mode = "HARDWARE"
 
-    # Final diagnosed type (prioritize ML prediction if valid, else rule mode)
-    final_type = ml_predicted_type if ml_predicted_type in FAILURE_MODE_DESCRIPTIONS and ml_predicted_type != "NONE" else rule_mode
-    if failure_prob < 0.30 and temp < 75 and mem < 80:
-        final_type = "NONE"
+class DiagnosticEngine:
+    def __init__(self, model_path: str = "models/diagnostic_model.pkl"):
+        self.model_path = model_path
+        self.model = None
+        self.load_model()
 
-    description = FAILURE_MODE_DESCRIPTIONS.get(final_type, FAILURE_MODE_DESCRIPTIONS["NONE"])
-    actions = ACTION_RECOMMENDATIONS.get(final_type, ACTION_RECOMMENDATIONS["NONE"])
+    def load_model(self):
+        if os.path.exists(self.model_path):
+            try:
+                self.model = joblib.load(self.model_path)
+            except Exception as e:
+                print(f"[DiagnosticEngine] Warning loading model: {e}")
+                self.model = None
 
-    return {
-        "diagnosed_failure_type": final_type,
-        "description": description,
-        "recommended_actions": actions,
-        "rule_override_applied": final_type != ml_predicted_type
-    }
+    def diagnose(self, telemetry: dict, failure_probability: float = 0.0) -> dict:
+        """
+        Runs multi-class diagnostic prediction when failure risk > 30% or telemetry anomalies exist.
+        Returns failure mode, confidence, and recommended NOC actions.
+        """
+        # Heuristic rules fallback if ML model is unavailable or operational state normal
+        cpu = telemetry.get('CPU_Usage', 0.0)
+        temp = telemetry.get('Temperature', 0.0)
+        mem = telemetry.get('Memory_Usage', 0.0)
+        errors = telemetry.get('Interface_Errors', 0.0)
+        packet_loss = telemetry.get('Packet_Loss', 0.0)
+        bw = telemetry.get('Bandwidth_Usage', 0.0)
+
+        # Default classification
+        predicted_mode = "NONE"
+        confidence = 0.95
+
+        if failure_probability >= 0.30 or temp > 75 or mem > 85 or cpu > 90 or errors > 15:
+            if self.model is not None:
+                try:
+                    # Construct feature vector
+                    feat_cols = [
+                        'CPU_Usage', 'Memory_Usage', 'Temperature', 'Interface_Errors',
+                        'Packet_Loss', 'Bandwidth_Usage', 'Uptime', 'Log_Errors',
+                        'Syslog_Critical_Count', 'CPU_5step_avg', 'CPU_Trend', 'CPU_Spike',
+                        'Memory_5step_avg', 'Memory_Trend', 'Temperature_5step_avg',
+                        'Temperature_Trend', 'Temperature_Spike', 'Error_5step_avg',
+                        'Error_Trend', 'Error_Spike', 'PacketLoss_5step_avg', 'PacketLoss_Trend'
+                    ]
+                    vec = [float(telemetry.get(c, 0.0)) for c in feat_cols]
+                    df_vec = pd.DataFrame([vec], columns=feat_cols)
+                    probs = self.model.predict_proba(df_vec)[0]
+                    classes = self.model.classes_
+                    top_idx = int(np.argmax(probs))
+                    predicted_mode = str(classes[top_idx])
+                    confidence = float(probs[top_idx])
+                except Exception as e:
+                    predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
+            else:
+                predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
+
+        actions = RECOMMENDED_ACTIONS.get(predicted_mode, RECOMMENDED_ACTIONS["NONE"])
+
+        return {
+            "failure_type": predicted_mode,
+            "diagnostic_confidence": round(confidence * 100, 1),
+            "recommended_actions": actions
+        }
+
+    def _heuristic_diagnose(self, cpu, temp, mem, errors, packet_loss, bw):
+        if temp > 75 or (temp > 70 and cpu > 80):
+            return "THERMAL"
+        elif mem > 85:
+            return "MEMORY"
+        elif errors > 15 or packet_loss > 5.0:
+            return "INTERFACE"
+        elif bw > 85 and (cpu > 75 or packet_loss > 2.0):
+            return "CONGESTION"
+        elif cpu > 90:
+            return "HARDWARE"
+        return "HARDWARE"

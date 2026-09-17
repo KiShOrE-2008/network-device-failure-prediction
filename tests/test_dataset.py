@@ -1,27 +1,35 @@
 import os
-import sys
 import pandas as pd
 import pytest
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.join(BASE_DIR, 'src') not in sys.path:
-    sys.path.insert(0, os.path.join(BASE_DIR, 'src'))
 
-from generate_dataset import generate_network_telemetry
+def test_dataset_v1_files_exist():
+    base_dir = "data/netguard_noc_dataset_v1"
+    assert os.path.exists(os.path.join(base_dir, "network_devices_timeseries.csv"))
+    assert os.path.exists(os.path.join(base_dir, "network_devices.csv"))
+    assert os.path.exists(os.path.join(base_dir, "failure_events.csv"))
+    assert os.path.exists(os.path.join(base_dir, "topology.csv"))
 
-def test_dataset_generation():
-    generate_network_telemetry(num_devices=10, steps_per_device=20)
-    timeseries_path = "data/network_devices_timeseries.csv"
-    assert os.path.exists(timeseries_path)
-    
-    df = pd.read_csv(timeseries_path)
-    assert len(df) == 200
-    assert df["Device_ID"].nunique() == 10
-    
-    expected_cols = [
-        "Timestamp", "Device_ID", "Hostname", "IP_Address", "Device_Type",
-        "Vendor", "Model", "Location", "CPU_Usage", "Memory_Usage",
-        "Temperature", "Failure_Type", "Failed", "CPU_Trend", "CPU_Spike"
-    ]
-    for col in expected_cols:
-        assert col in df.columns
+
+def test_device_count_and_schema():
+    csv_path = "data/netguard_noc_dataset_v1/network_devices.csv"
+    df = pd.read_csv(csv_path)
+    assert len(df) == 500
+    assert "Device_ID" in df.columns
+    assert "Vendor" in df.columns
+    assert "Model" in df.columns
+
+
+def test_timeseries_target_columns():
+    csv_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
+    df = pd.read_csv(csv_path, nrows=100)
+    assert "Failed" in df.columns
+    assert "Failure_Next_12h" in df.columns
+    assert "Failure_Type" in df.columns
+    assert "Hidden_Degradation_State" in df.columns
+
+
+def test_hidden_degradation_not_in_features():
+    from feature_engineering import FEATURE_COLUMNS, EXCLUDE_COLUMNS
+    assert "Hidden_Degradation_State" not in FEATURE_COLUMNS
+    assert "Hidden_Degradation_State" in EXCLUDE_COLUMNS

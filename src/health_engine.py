@@ -66,6 +66,22 @@ def compute_health_score(telemetry: Dict[str, Any], probability: float = 0.0, an
     health = (1.0 - min(combined_risk, 1.0)) * 100.0
     return round(health, 1)
 
+def compute_fleet_health_score(health_scores: List[float], probabilities: List[float]) -> float:
+    """
+    Computes overall Fleet Health Score [0-100].
+    Applies non-linear penalties for critical and high-risk devices to prevent masking impendent failures.
+    """
+    if not health_scores:
+        return 100.0
+    import numpy as np
+    base_avg = float(np.mean(health_scores))
+    critical_count = sum(1 for p in probabilities if p >= 0.85)
+    high_count = sum(1 for p in probabilities if 0.65 <= p < 0.85)
+    penalty = (critical_count * 3.0) + (high_count * 1.0)
+    fleet_health = max(0.0, min(100.0, base_avg - penalty))
+    return round(fleet_health, 1)
+
+
 def get_risk_level(probability: float) -> str:
     """
     4-Tier Risk Scale:

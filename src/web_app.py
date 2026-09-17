@@ -19,8 +19,22 @@ from monitoring import syslog_collector
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='')
 
+# Import and Register Modular Blueprints
+from api.fleet import fleet_bp
+from api.devices import devices_bp
+from api.alerts import alerts_bp
+from api.topology import topology_bp
+from api.discovery import discovery_bp
+
+app.register_blueprint(fleet_bp)
+app.register_blueprint(devices_bp)
+app.register_blueprint(alerts_bp)
+app.register_blueprint(topology_bp)
+app.register_blueprint(discovery_bp)
+
 history_store.init_db()
 history_store.seed_devices_from_dataset()
+
 
 MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'failure_model.pkl')
 DIAGNOSTIC_MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'diagnostic_model.pkl')
