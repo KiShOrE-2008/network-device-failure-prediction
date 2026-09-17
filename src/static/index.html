@@ -399,10 +399,24 @@
                                 <span id="risk-text">LOW RISK</span>
                             </div>
 
+                            <!-- Diagnosis & Anomaly Pill Indicators -->
+                            <div style="display:flex;gap:10px;justify-content:center;margin-top:12px;flex-wrap:wrap;">
+                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:6px 12px;font-size:0.75rem;display:flex;align-items:center;gap:6px;">
+                                    <span style="color:var(--text-muted);">Diagnosis:</span>
+                                    <strong id="failure-type-display" style="color:#00e676;">NONE</strong>
+                                </div>
+                                <div style="background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:6px 12px;font-size:0.75rem;display:flex;align-items:center;gap:6px;">
+                                    <span style="color:var(--text-muted);">Anomaly Score:</span>
+                                    <strong id="anomaly-score-val" style="color:#a5b4fc;">0.0%</strong>
+                                    <span id="anomaly-flag-badge" class="badge healthy-badge" style="font-size:0.65rem;padding:2px 6px;">NORMAL</span>
+                                </div>
+                            </div>
+
                             <!-- Status Description -->
-                            <p class="status-summary" id="result-status-summary">
+                            <p class="status-summary" id="result-status-summary" style="margin-top:10px;">
                                 Adjust parameters or click a preset to fetch predictions.
                             </p>
+                            <p id="failure-desc-display" style="font-size:0.75rem;color:var(--text-muted);text-align:center;margin-top:4px;font-style:italic;"></p>
                         </div>
 
                         <!-- Recommendations Card -->

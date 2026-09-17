@@ -4,72 +4,66 @@ import pandas as pd
 import joblib
 from flask import Flask, jsonify, request, send_from_directory
 
-# Resolve paths relative to the file location to prevent working directory issues
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 WORKSPACE_ROOT = os.path.dirname(BASE_DIR)
 
-# Add src to path for sibling module imports
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 import health_engine
 import shap_explainer
 import history_store
+import anomaly_detection
+from intelligence import diagnostic_engine
+from monitoring import syslog_collector
 
 app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='')
 
-# Initialise SQLite prediction history (idempotent — safe to call every restart)
 history_store.init_db()
 
-# --------------------------------
-# Load model
-# --------------------------------
+# ---------------------------------------------------------------------------
+# Load ML Models
+# ---------------------------------------------------------------------------
 MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'failure_model.pkl')
-model = None
+DIAGNOSTIC_MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'diagnostic_model.pkl')
+ANOMALY_MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'anomaly_model.pkl')
+
+failure_model = None
+diagnostic_model = None
+anomaly_model = None
 
 try:
     if os.path.exists(MODEL_PATH):
-        model = joblib.load(MODEL_PATH)
-        print(f"✅ Loaded machine learning pipeline from {MODEL_PATH}")
-    else:
-        print(f"⚠️ Warning: Model file not found at {MODEL_PATH}")
-        print("Backend starting in degraded mode. Please run python src/train_model.py to train.")
+        failure_model = joblib.load(MODEL_PATH)
+        print(f"✅ Loaded failure classifier model from {MODEL_PATH}")
+    if os.path.exists(DIAGNOSTIC_MODEL_PATH):
+        diagnostic_model = joblib.load(DIAGNOSTIC_MODEL_PATH)
+        print(f"✅ Loaded diagnostic classifier model from {DIAGNOSTIC_MODEL_PATH}")
+    if os.path.exists(ANOMALY_MODEL_PATH):
+        anomaly_model = joblib.load(ANOMALY_MODEL_PATH)
+        print(f"✅ Loaded anomaly detector model from {ANOMALY_MODEL_PATH}")
 except Exception as e:
-    print(f"❌ Error loading model: {str(e)}")
+    print(f"⚠️ Warning loading models: {str(e)}")
 
-# Helper to get active model name
 def get_active_model_name():
-    if model is None:
+    if failure_model is None:
         return "None (Model not trained)"
     try:
-        # Check if it's a pipeline and inspect the classifier step
-        if hasattr(model, 'named_steps') and 'model' in model.named_steps:
-            clf_class = model.named_steps['model'].__class__.__name__
+        if hasattr(failure_model, 'named_steps') and 'model' in failure_model.named_steps:
+            clf_class = failure_model.named_steps['model'].__class__.__name__
             if "XGB" in clf_class:
                 return "XGBoost Classifier"
             elif "RandomForest" in clf_class:
                 return "Random Forest Classifier"
-            elif "LogisticRegression" in clf_class:
-                return "Logistic Regression"
             return clf_class
-        return model.__class__.__name__
+        return failure_model.__class__.__name__
     except:
-        return "Custom Pipeline"
+        return "XGBoost Pipeline"
 
-# --------------------------------
-# Routes
-# --------------------------------
-
-@app.route('/')
-def index():
-    """Serves the main SPA page."""
-    return app.send_static_file('index.html')
-
+# ---------------------------------------------------------------------------
+# Helper Inference Pipeline
+# ---------------------------------------------------------------------------
 def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str = "manual") -> dict:
-    """
-    Shared inference helper used by both /api/predict and /api/whatif.
-    Returns the full enriched result dict. Raises on error.
-    """
     device_type = str(telemetry.get("Device_Type", "Router")).strip()
     device_type = "Router" if device_type.lower() == "router" else "Switch"
 
@@ -82,134 +76,137 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
     bandwidth_usage  = float(telemetry.get("Bandwidth_Usage", 0.0))
     log_errors       = int(telemetry.get("Log_Errors", 0))
 
+    cpu_trend        = float(telemetry.get("CPU_Trend", 0.0))
+    memory_trend     = float(telemetry.get("Memory_Trend", 0.0))
+    temp_trend       = float(telemetry.get("Temperature_Trend", 0.0))
+    error_trend      = float(telemetry.get("Error_Trend", 0.0))
+    loss_trend       = float(telemetry.get("PacketLoss_Trend", 0.0))
+
     clean_telemetry = {
-        "Device_Type":      device_type,
-        "CPU_Usage":        cpu_usage,
-        "Memory_Usage":     memory_usage,
-        "Temperature":      temperature,
-        "Uptime":           uptime,
-        "Interface_Errors": interface_errors,
-        "Packet_Loss":      packet_loss,
-        "Bandwidth_Usage":  bandwidth_usage,
-        "Log_Errors":       log_errors,
+        "Device_Type":        device_type,
+        "CPU_Usage":          cpu_usage,
+        "Memory_Usage":       memory_usage,
+        "Temperature":        temperature,
+        "Uptime":             uptime,
+        "Interface_Errors":   interface_errors,
+        "Packet_Loss":        packet_loss,
+        "Bandwidth_Usage":    bandwidth_usage,
+        "Log_Errors":         log_errors,
+        "CPU_Trend":          cpu_trend,
+        "Memory_Trend":       memory_trend,
+        "Temperature_Trend":  temp_trend,
+        "Error_Trend":        error_trend,
+        "PacketLoss_Trend":   loss_trend
     }
 
     features_df = pd.DataFrame([clean_telemetry])
 
-    # Core ML inference
-    prediction  = int(model.predict(features_df)[0])
-    probability = float(model.predict_proba(features_df)[0][1])
-
-    # Risk classification
-    if probability < 0.30:
-        risk        = "LOW"
-        color       = "#00e676"
-        status_text = "Device condition is currently healthy and operating within acceptable parameters."
-    elif probability < 0.70:
-        risk        = "MEDIUM"
-        color       = "#ffb300"
-        status_text = "Moderate risk detected. Recommend close monitoring and secondary diagnostics."
+    # 1. Binary Failure Model Inference
+    if failure_model is not None:
+        prediction  = int(failure_model.predict(features_df)[0])
+        probability = float(failure_model.predict_proba(features_df)[0][1])
     else:
-        risk        = "HIGH"
-        color       = "#ff1744"
-        status_text = "CRITICAL WARNING: High failure probability. Preventive maintenance or immediate reboot/failover is highly recommended."
+        probability = min(1.0, (cpu_usage*0.25 + memory_usage*0.2 + temperature*0.2 + interface_errors*0.1) / 100.0)
+        prediction  = 1 if probability > 0.65 else 0
 
-    # Legacy advisory items (kept for backward compatibility)
-    advisory = []
-    if cpu_usage > 85.0:
-        advisory.append("CPU usage is critical. Consider load shedding, routing optimizations, or scaling hardware.")
-    if memory_usage > 90.0:
-        advisory.append("System memory is nearly exhausted. Check for memory leaks or rogue system processes.")
-    if temperature > 75.0:
-        advisory.append("Internal temperature is high. Clean chassis vents, check cooling fan performance, or reduce room ambient heat.")
-    if interface_errors > 100:
-        advisory.append("High count of interface CRC errors. Inspect network cables and SFP optics for physical defects.")
-    if packet_loss > 3.0:
-        advisory.append("Severe packet loss detected. Investigate buffer bloat, link congestion, or duplex mismatches.")
-    if log_errors > 15:
-        advisory.append("Excessive system log errors. Check console buffers for underlying hardware failures or authorization issues.")
-    if uptime > 365:
-        advisory.append("Device uptime exceeds 1 year. Schedule a preventative maintenance reboot to refresh buffers and system memory.")
-    if not advisory:
-        advisory.append("No specific hardware anomalies detected. All telemetry lines are within standard parameters.")
+    # 2. Multi-Class Diagnostic Classifier Inference
+    ml_failure_type = "NONE"
+    if diagnostic_model is not None:
+        try:
+            pred_idx = int(diagnostic_model.predict(features_df)[0])
+            if hasattr(diagnostic_model, 'label_classes_') and pred_idx < len(diagnostic_model.label_classes_):
+                ml_failure_type = str(diagnostic_model.label_classes_[pred_idx])
+        except Exception:
+            ml_failure_type = "NONE"
 
-    # --- New enrichment ---
-    # 1. SHAP causes (falls back to health_engine.main_causes on failure)
+    # Hybrid Diagnosis with Heuristics
+    diag_res = diagnostic_engine.diagnose_failure_mode(clean_telemetry, ml_failure_type, probability)
+    final_failure_type = diag_res["diagnosed_failure_type"]
+
+    # 3. Unsupervised Isolation Forest Anomaly Detection
+    anom_res = anomaly_detection.predict_anomaly(clean_telemetry, anomaly_model, ANOMALY_MODEL_PATH)
+
+    # 4. Risk Classification
+    if probability < 0.30:
+        risk = "LOW"
+        color = "#00e676"
+        status_text = "Device condition is currently healthy and operating within nominal parameters."
+    elif probability < 0.65:
+        risk = "MEDIUM"
+        color = "#ffb300"
+        status_text = "Moderate degradation detected. Recommend close NOC telemetry monitoring."
+    else:
+        risk = "HIGH"
+        color = "#ff1744"
+        status_text = "CRITICAL WARNING: High failure probability. Immediate preventive maintenance required."
+
+    # 5. Syslog Intelligence
+    raw_log = str(telemetry.get("Latest_Syslog", "NORMAL_OPERATIONAL_STATE"))
+    log_info = syslog_collector.parse_syslog(raw_log)
+
+    # 6. SHAP attributions & Health Engine
     shap_causes = shap_explainer.get_shap_causes(clean_telemetry, top_n=5)
-
-    # 2. Full health report (uses SHAP causes if available)
     report = health_engine.build_health_report(clean_telemetry, probability, shap_causes)
 
     result = {
-        "success":             True,
-        "prediction":          prediction,
-        "probability":         probability,
-        "risk":                risk,
-        "risk_color":          color,
-        "status_text":         status_text,
-        "advisory":            advisory,
-        "model_used":          get_active_model_name(),
-        # New fields
-        "health_score":        report["health_score"],
-        "risk_window":         report["risk_window"],
-        "shap_causes":         shap_causes if shap_causes else report["top_causes"],
-        "recommended_actions": report["recommended_actions"],
+        "success":              True,
+        "device_id":            device_id,
+        "prediction":           prediction,
+        "probability":          probability,
+        "risk":                 risk,
+        "risk_color":           color,
+        "status_text":          status_text,
+        "model_used":           get_active_model_name(),
+        "health_score":         report["health_score"],
+        "risk_window":          report["risk_window"],
+        "failure_type":         final_failure_type,
+        "diagnosis_narrative":  diag_res["description"],
+        "anomaly_score":        anom_res["anomaly_score"],
+        "is_anomaly":           anom_res["is_anomaly"],
+        "anomalous_features":   anom_res["anomalous_features"],
+        "shap_causes":          shap_causes if shap_causes else report["top_causes"],
+        "recommended_actions":  diag_res["recommended_actions"],
+        "syslog_summary":       log_info
     }
 
-    # Log to history (only for real /api/predict calls, not what-if)
     if log_to_history:
         history_store.log_prediction(device_id, clean_telemetry, result)
 
     return result
 
+# ---------------------------------------------------------------------------
+# API Routes
+# ---------------------------------------------------------------------------
+
+@app.route('/')
+def index():
+    return app.send_static_file('index.html')
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
-    """Receives telemetry details and returns enriched failure prediction."""
-    if model is None:
-        return jsonify({
-            "error": "ML model is not loaded. Please train the model using src/train_model.py."
-        }), 503
-
     try:
         data = request.json
         if not data:
             return jsonify({"error": "No input data provided"}), 400
-
         device_id = str(data.get("device_id", "manual")).strip() or "manual"
         result = _run_inference(data, log_to_history=True, device_id=device_id)
         return jsonify(result)
-
     except Exception as e:
         return jsonify({"error": f"Failed to perform prediction: {str(e)}"}), 500
 
-
 @app.route('/api/whatif', methods=['POST'])
 def whatif():
-    """
-    What-If simulator endpoint — identical to /api/predict but intentionally
-    does NOT log to history. Safe to call on every slider drag.
-    """
-    if model is None:
-        return jsonify({
-            "error": "ML model is not loaded. Please train the model using src/train_model.py."
-        }), 503
-
     try:
         data = request.json
         if not data:
             return jsonify({"error": "No input data provided"}), 400
-
         result = _run_inference(data, log_to_history=False)
         return jsonify(result)
-
     except Exception as e:
         return jsonify({"error": f"What-if inference failed: {str(e)}"}), 500
 
-
 @app.route('/api/history/<device_id>', methods=['GET'])
 def get_device_history(device_id):
-    """Return the last 50 logged predictions for a given device ID."""
     try:
         limit = int(request.args.get("limit", 50))
         records = history_store.get_history(device_id, limit=limit)
@@ -217,57 +214,83 @@ def get_device_history(device_id):
     except Exception as e:
         return jsonify({"error": f"History fetch failed: {str(e)}"}), 500
 
+@app.route('/api/device/<device_id>/timeline', methods=['GET'])
+def get_device_timeline(device_id):
+    """Returns sequence of historical telemetry points for time-series charts."""
+    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices_timeseries.csv')
+    if not os.path.exists(csv_path):
+        return jsonify({"error": "Time-series dataset CSV not found."}), 404
+    try:
+        df = pd.read_csv(csv_path)
+        dev_df = df[df["Device_ID"] == device_id].sort_values("Timestamp").tail(50)
+        records = dev_df.to_dict(orient="records")
+        return jsonify({"success": True, "device_id": device_id, "timeline": records})
+    except Exception as e:
+        return jsonify({"error": f"Timeline fetch failed: {str(e)}"}), 500
 
 @app.route('/api/history', methods=['GET'])
 def get_global_history():
-    """Return the last 20 logged predictions across all devices."""
     try:
-        records = history_store.get_recent_global(limit=20)
+        records = history_store.get_recent_global(limit=30)
         return jsonify({"success": True, "records": records})
     except Exception as e:
         return jsonify({"error": f"Global history fetch failed: {str(e)}"}), 500
 
+@app.route('/api/alerts', methods=['GET'])
+def get_alerts():
+    try:
+        alerts = history_store.get_active_alerts(limit=30)
+        return jsonify({"success": True, "alerts": alerts})
+    except Exception as e:
+        return jsonify({"error": f"Alerts fetch failed: {str(e)}"}), 500
+
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
-    """Computes summary statistics from network_devices.csv dataset."""
-    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices.csv')
+    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices_timeseries.csv')
     if not os.path.exists(csv_path):
-        return jsonify({
-            "error": "Dataset CSV file not found. Please run the data generation script."
-        }), 404
+        csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices.csv')
+
+    if not os.path.exists(csv_path):
+        return jsonify({"error": "Dataset CSV file not found."}), 404
 
     try:
         df = pd.read_csv(csv_path)
         
-        # Calculate summary values
-        total_devices = len(df)
-        failed_count = int(df['Failed'].sum())
+        # Unique device snapshot statistics
+        if "Timestamp" in df.columns:
+            latest_df = df.groupby("Device_ID").last().reset_index()
+        else:
+            latest_df = df
+            
+        total_devices = len(latest_df)
+        failed_count = int(latest_df['Failed'].sum())
         healthy_count = total_devices - failed_count
-        health_rate = (healthy_count / total_devices) * 100
+        health_rate = round((healthy_count / total_devices) * 100, 2)
         
-        # Means
-        avg_cpu = float(df['CPU_Usage'].mean())
-        avg_mem = float(df['Memory_Usage'].mean())
-        avg_temp = float(df['Temperature'].mean())
-        avg_loss = float(df['Packet_Loss'].mean())
+        avg_cpu = float(latest_df['CPU_Usage'].mean())
+        avg_mem = float(latest_df['Memory_Usage'].mean())
+        avg_temp = float(latest_df['Temperature'].mean())
+        avg_loss = float(latest_df['Packet_Loss'].mean())
         
-        # Device Breakdown
-        device_types = df['Device_Type'].value_counts().to_dict()
+        device_types = latest_df['Device_Type'].value_counts().to_dict()
         routers_count = int(device_types.get('Router', 0))
         switches_count = int(device_types.get('Switch', 0))
+        
+        failure_types = latest_df['Failure_Type'].value_counts().to_dict() if 'Failure_Type' in latest_df.columns else {}
 
         return jsonify({
             "success": True,
             "total_devices": total_devices,
             "failed_count": failed_count,
             "healthy_count": healthy_count,
-            "health_rate": round(health_rate, 2),
+            "health_rate": health_rate,
             "avg_cpu": round(avg_cpu, 2),
             "avg_mem": round(avg_mem, 2),
             "avg_temp": round(avg_temp, 2),
             "avg_loss": round(avg_loss, 2),
             "routers_count": routers_count,
             "switches_count": switches_count,
+            "failure_types_breakdown": failure_types,
             "active_model": get_active_model_name()
         })
 
@@ -276,12 +299,10 @@ def get_stats():
 
 @app.route('/api/plots/<filename>')
 def serve_plot(filename):
-    """Serves generated EDA plots from the outputs directory."""
     plots_dir = os.path.join(WORKSPACE_ROOT, 'outputs')
     return send_from_directory(plots_dir, filename)
 
 if __name__ == '__main__':
-    # Run the development server
     port = int(os.environ.get('PORT', 5000))
     print(f"🚀 Launching NetGuard NOC web server on http://localhost:{port}...")
     app.run(host='0.0.0.0', port=port, debug=True)

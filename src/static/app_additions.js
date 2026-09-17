@@ -1,32 +1,63 @@
 /**
  * app_additions.js
  * ----------------
- * Intelligence Hub additions for NetGuard NOC dashboard.
- * Depends on app.js being loaded first (shares slider DOM references).
- *
- * Exports (assigned to window):
- *   initDashboardAdditions(deviceId)
+ * Intelligence Hub & NOC Dashboard enhancements for NetGuard NOC.
+ * Handles SHAP visualizations, Health score gauge, What-If simulator,
+ * device timeline charts, active alerts, and failure mode diagnostics.
  */
 
-// ─── State ────────────────────────────────────────────────────────────────────
 let _currentDeviceId = 'manual';
-let _baselineResult   = null;   // last /api/predict result (for what-if diff)
+let _baselineResult   = null;
 let _whatifTimeout    = null;
 
-// ─── Init ─────────────────────────────────────────────────────────────────────
 window.initDashboardAdditions = function (deviceId) {
     _currentDeviceId = deviceId || 'manual';
     loadHistory(_currentDeviceId);
+    loadActiveAlerts();
+    loadDeviceTimeline(_currentDeviceId);
 };
 
-// Called by app.js's updateUIWithResults to hook into every real prediction
 window._onPredictionResult = function (data) {
     _baselineResult = data;
     renderHealthScore(data);
     renderShapCauses(data.shap_causes || []);
     renderRiskWindow(data.risk_window || '');
     renderRecommendedActions(data.recommended_actions || []);
+    renderDiagnosisBadge(data);
+    renderAnomalyBadge(data);
 };
+
+// ─── Diagnosis & Anomaly Badges ───────────────────────────────────────────────
+function renderDiagnosisBadge(data) {
+    const typeEl = document.getElementById('failure-type-display');
+    const descEl = document.getElementById('failure-desc-display');
+    if (typeEl) {
+        typeEl.textContent = data.failure_type || 'NONE';
+        typeEl.style.color = (data.failure_type && data.failure_type !== 'NONE') ? '#ff1744' : '#00e676';
+    }
+    if (descEl) {
+        descEl.textContent = data.diagnosis_narrative || 'Nominal operational status.';
+    }
+}
+
+function renderAnomalyBadge(data) {
+    const scoreEl = document.getElementById('anomaly-score-val');
+    const flagEl  = document.getElementById('anomaly-flag-badge');
+    if (scoreEl) scoreEl.textContent = (data.anomaly_score ?? 0).toFixed(1) + '%';
+    if (flagEl) {
+        if (data.is_anomaly) {
+            flagEl.textContent = 'ANOMALY DETECTED';
+            flagEl.className = 'badge critical-badge';
+            flagEl.style.background = 'rgba(255,23,68,0.2)';
+            flagEl.style.color = '#ff1744';
+        } else {
+            flagEl.textContent = 'NORMAL BEHAVIOR';
+            flagEl.className = 'badge healthy-badge';
+            flagEl.style.background = 'rgba(0,230,118,0.15)';
+            flagEl.style.color = '#00e676';
+        }
+    }
+}
 
 // ─── Health Score ─────────────────────────────────────────────────────────────
 function renderHealthScore(data) {
@@ -38,12 +69,10 @@ function renderHealthScore(data) {
     const score = data.health_score ?? 0;
     scoreEl.textContent = score.toFixed(1);
 
-    // SVG arc: full circle circumference = 2π×45 ≈ 282.7
     const circumference = 282.7;
     const fraction = Math.max(0, Math.min(score / 100, 1));
     arcEl.style.strokeDashoffset = circumference * (1 - fraction);
 
-    // Colour gradient: green (100) → amber (50) → red (0)
     let color;
     if (score >= 70)      color = '#00e676';
     else if (score >= 40) color = '#ffb300';
@@ -59,25 +88,22 @@ function renderHealthScore(data) {
     }
 }
 
-// ─── Risk Window ──────────────────────────────────────────────────────────────
 function renderRiskWindow(text) {
     const el = document.getElementById('risk-window-text');
     if (el) el.textContent = text;
 }
 
-// ─── SHAP / Cause Bars ────────────────────────────────────────────────────────
+// ─── SHAP Cause Bars ──────────────────────────────────────────────────────────
 function renderShapCauses(causes) {
     const container = document.getElementById('shap-bars-container');
     if (!container) return;
-
     container.innerHTML = '';
 
     if (!causes || causes.length === 0) {
-        container.innerHTML = '<p class="shap-empty">No cause data available.</p>';
+        container.innerHTML = '<p class="shap-empty">No attribution data available.</p>';
         return;
     }
 
-    // Max absolute contribution for relative bar widths
     const maxAbs = Math.max(...causes.map(c => Math.abs(c.contribution)), 0.001);
 
     causes.forEach((cause, idx) => {
@@ -95,10 +121,7 @@ function renderShapCauses(causes) {
                 <span>${cause.feature}</span>
             </div>
             <div class="shap-bar-track">
-                <div class="shap-bar-fill"
-                     style="width:0%; background:${barColor};"
-                     data-target="${pct}">
-                </div>
+                <div class="shap-bar-fill" style="width:0%; background:${barColor};" data-target="${pct}"></div>
             </div>
             <span class="shap-pct" style="color:${barColor}">
                 ${Math.abs(cause.contribution).toFixed(3)}
@@ -107,7 +130,6 @@ function renderShapCauses(causes) {
         container.appendChild(row);
     });
 
-    // Animate bars after paint
     requestAnimationFrame(() => {
         container.querySelectorAll('.shap-bar-fill').forEach(bar => {
             bar.style.transition = 'width 0.6s cubic-bezier(0.4,0,0.2,1)';
@@ -116,7 +138,6 @@ function renderShapCauses(causes) {
     });
 }
 
-// ─── Recommended Actions (Intelligence tab) ───────────────────────────────────
 function renderRecommendedActions(actions) {
     const list = document.getElementById('intel-actions-list');
     if (!list) return;
@@ -127,6 +148,76 @@ function renderRecommendedActions(actions) {
         li.innerHTML = `<i class="fa-solid fa-arrow-right-long"></i><span>${action}</span>`;
         list.appendChild(li);
     });
+}
+
+// ─── Active Alerts & Timelines ────────────────────────────────────────────────
+async function loadActiveAlerts() {
+    const container = document.getElementById('active-alerts-feed');
+    if (!container) return;
+    try {
+        const res = await fetch('/api/alerts');
+        const data = await res.json();
+        if (data.success && data.alerts && data.alerts.length > 0) {
+            container.innerHTML = data.alerts.map(a => `
+                <div class="alert-feed-item ${a.severity.toLowerCase()}">
+                    <i class="fa-solid ${a.severity === 'CRITICAL' ? 'fa-triangle-exclamation' : 'fa-bell'} font-warning"></i>
+                    <div class="alert-content">
+                        <strong>${a.title}</strong>
+                        <p>${a.message}</p>
+                        <span class="alert-time">${new Date(a.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            container.innerHTML = '<p class="text-muted" style="font-size:0.8rem;padding:8px 0;">No active NOC alerts.</p>';
+        }
+    } catch(e) {
+        console.warn('Alerts fetch failed:', e);
+    }
+}
+
+async function loadDeviceTimeline(deviceId) {
+    const chartContainer = document.getElementById('device-timeline-chart');
+    if (!chartContainer) return;
+    try {
+        const res = await fetch(`/api/device/${encodeURIComponent(deviceId)}/timeline`);
+        const data = await res.json();
+        if (data.success && data.timeline && data.timeline.length > 0) {
+            renderTimelineGraph(chartContainer, data.timeline);
+        } else {
+            chartContainer.innerHTML = '<p class="text-muted" style="font-size:0.8rem;padding:12px 0;">No historical time-series telemetry available for this device ID.</p>';
+        }
+    } catch (e) {
+        console.warn('Timeline load failed:', e);
+    }
+}
+
+function renderTimelineGraph(container, timeline) {
+    const W = container.clientWidth || 550;
+    const H = 140;
+    const PAD = { top: 15, right: 20, bottom: 25, left: 35 };
+    const innerW = W - PAD.left - PAD.right;
+    const innerH = H - PAD.top - PAD.bottom;
+
+    const n = timeline.length;
+    const xStep = n > 1 ? innerW / (n - 1) : innerW;
+    const toX = i => PAD.left + (n > 1 ? i * xStep : innerW / 2);
+    const toY = val => PAD.top + innerH * (1 - (val / 100.0));
+
+    const cpuPoints = timeline.map((r, i) => `${toX(i)},${toY(r.CPU_Usage)}`).join(' ');
+    const tempPoints = timeline.map((r, i) => `${toX(i)},${toY(r.Temperature)}`).join(' ');
+
+    container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="sparkline-svg">
+        <line x1="${PAD.left}" y1="${toY(80)}" x2="${PAD.left + innerW}" y2="${toY(80)}" stroke="rgba(255,23,68,0.4)" stroke-dasharray="4,4"/>
+        <polyline points="${cpuPoints}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round"/>
+        <polyline points="${tempPoints}" fill="none" stroke="#ff1744" stroke-width="2" stroke-linejoin="round"/>
+    </svg>
+    <div style="display:flex;gap:16px;font-size:0.7rem;color:var(--text-muted);margin-top:4px;justify-content:center;">
+        <span><span style="color:#6366f1;">━</span> CPU Usage %</span>
+        <span><span style="color:#ff1744;">━</span> Temperature °C</span>
+        <span><span style="color:rgba(255,23,68,0.7);">┅</span> 80% Threshold</span>
+    </div>`;
 }
 
 // ─── Prediction History ───────────────────────────────────────────────────────
@@ -146,7 +237,7 @@ async function loadHistory(deviceId) {
         }
         if (emptyEl) emptyEl.style.display = 'none';
 
-        const records = [...data.records].reverse();  // oldest → newest
+        const records = [...data.records].reverse();
         renderHistorySparkline(container, records);
         renderHistoryTable(records);
     } catch (e) {
@@ -166,45 +257,36 @@ function renderHistorySparkline(container, records) {
     const xStep = n > 1 ? innerW / (n - 1) : innerW;
 
     const toX = i => PAD.left + (n > 1 ? i * xStep : innerW / 2);
-    const toY = v => PAD.top + innerH * (1 - v);   // v in [0,1]
+    const toY = v => PAD.top + innerH * (1 - v);
 
-    // Build SVG polyline points
     const points = probs.map((v, i) => `${toX(i)},${toY(v)}`).join(' ');
-
-    // Area fill path
     const firstX = toX(0), lastX = toX(n - 1), baseY = PAD.top + innerH;
     const areaPath = `M${firstX},${baseY} L${firstX},${toY(probs[0])} `
         + probs.slice(1).map((v, i) => `L${toX(i + 1)},${toY(v)}`).join(' ')
         + ` L${lastX},${baseY} Z`;
 
-    // Y-axis labels
     const yLabels = [0, 0.25, 0.5, 0.75, 1.0].map(v => `
-        <text x="${PAD.left - 6}" y="${toY(v) + 4}" text-anchor="end"
-              class="sparkline-axis-label">${Math.round(v * 100)}%</text>
-        <line x1="${PAD.left}" y1="${toY(v)}" x2="${PAD.left + innerW}" y2="${toY(v)}"
-              class="sparkline-grid-line"/>
+        <text x="${PAD.left - 6}" y="${toY(v) + 4}" text-anchor="end" class="sparkline-axis-label">${Math.round(v * 100)}%</text>
+        <line x1="${PAD.left}" y1="${toY(v)}" x2="${PAD.left + innerW}" y2="${toY(v)}" class="sparkline-grid-line"/>
     `).join('');
 
-    // Dots for each point
     const dots = probs.map((v, i) => {
         const risk = records[i].risk || 'LOW';
         const dc   = risk === 'HIGH' ? '#ff1744' : risk === 'MEDIUM' ? '#ffb300' : '#00e676';
-        return `<circle cx="${toX(i)}" cy="${toY(v)}" r="3.5" fill="${dc}" class="sparkline-dot"
-                        data-idx="${i}" data-prob="${(v * 100).toFixed(1)}" data-risk="${risk}"/>`;
+        return `<circle cx="${toX(i)}" cy="${toY(v)}" r="3.5" fill="${dc}" class="sparkline-dot" data-idx="${i}"/>`;
     }).join('');
 
     container.innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" class="sparkline-svg">
         <defs>
             <linearGradient id="spark-grad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%"   stop-color="#6366f1" stop-opacity="0.45"/>
+                <stop offset="0%" stop-color="#6366f1" stop-opacity="0.45"/>
                 <stop offset="100%" stop-color="#6366f1" stop-opacity="0"/>
             </linearGradient>
         </defs>
         ${yLabels}
         <path d="${areaPath}" fill="url(#spark-grad)"/>
-        <polyline points="${points}" fill="none" stroke="#6366f1" stroke-width="2"
-                  stroke-linejoin="round" stroke-linecap="round"/>
+        <polyline points="${points}" fill="none" stroke="#6366f1" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
         ${dots}
     </svg>`;
 }
@@ -217,28 +299,28 @@ function renderHistoryTable(records) {
         const ts   = new Date(r.timestamp).toLocaleString();
         const prob = ((r.probability || 0) * 100).toFixed(1) + '%';
         const hs   = r.health_score != null ? r.health_score.toFixed(1) : '—';
-        const riskClass = r.risk === 'HIGH' ? 'font-critical'
-                        : r.risk === 'MEDIUM' ? 'font-warning' : 'font-accent';
+        const ftype = r.failure_type || 'NONE';
+        const riskClass = r.risk === 'HIGH' ? 'font-critical' : r.risk === 'MEDIUM' ? 'font-warning' : 'font-accent';
         return `<tr>
             <td>${ts}</td>
             <td>${prob}</td>
             <td>${hs}</td>
             <td class="${riskClass}">${r.risk || '—'}</td>
+            <td>${ftype}</td>
         </tr>`;
     }).join('');
 }
 
-// Device ID lookup button
 document.addEventListener('DOMContentLoaded', () => {
     const lookupBtn = document.getElementById('history-lookup-btn');
     const deviceInput = document.getElementById('history-device-input');
-
     if (lookupBtn && deviceInput) {
         lookupBtn.addEventListener('click', () => {
             const id = deviceInput.value.trim();
             if (!id) return;
             _currentDeviceId = id;
             loadHistory(id);
+            loadDeviceTimeline(id);
         });
         deviceInput.addEventListener('keydown', e => {
             if (e.key === 'Enter') lookupBtn.click();
@@ -286,7 +368,6 @@ function renderWhatIfPanel(whatifData) {
     const wProb    = (whatifData.probability  * 100).toFixed(1);
     const wHealth  = (whatifData.health_score ?? 0).toFixed(1);
 
-    // Delta vs baseline
     let deltaProb = null, deltaHealth = null;
     if (baseline) {
         deltaProb   = ((whatifData.probability  - baseline.probability)  * 100).toFixed(1);
@@ -322,9 +403,10 @@ function renderWhatIfPanel(whatifData) {
     }
 
     renderShapCauses(whatifData.shap_causes || []);
+    renderDiagnosisBadge(whatifData);
+    renderAnomalyBadge(whatifData);
 }
 
-// Wire What-If mode toggle
 document.addEventListener('DOMContentLoaded', () => {
     const toggleBtn = document.getElementById('whatif-toggle-btn');
     const wiPanel   = document.getElementById('whatif-panel');
@@ -341,7 +423,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (wiPanel) wiPanel.style.display = wiActive ? 'block' : 'none';
 
             if (wiActive) {
-                // Intercept slider input events to call /api/whatif
                 document.querySelectorAll('input[type="range"], input[name="Device_Type"]')
                     .forEach(el => el.addEventListener('input', scheduleWhatIf));
                 triggerWhatIf();
@@ -359,8 +440,6 @@ function scheduleWhatIf() {
     _whatifTimeout = setTimeout(triggerWhatIf, 200);
 }
 
-// ─── Hook into app.js prediction pipeline ────────────────────────────────────
-// Patch updateUIWithResults to also call our hook
 (function patchUpdateUI() {
     const _original = window.updateUIWithResults;
     if (typeof _original === 'function') {
@@ -371,12 +450,10 @@ function scheduleWhatIf() {
             }
         };
     } else {
-        // app.js not yet loaded — retry after a short delay
         setTimeout(patchUpdateUI, 200);
     }
 })();
 
-// Auto-init with 'manual' device on page load
 document.addEventListener('DOMContentLoaded', () => {
     window.initDashboardAdditions('manual');
 });
