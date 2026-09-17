@@ -1,9 +1,9 @@
 /**
  * app_additions.js
  * ----------------
- * Intelligence Hub & NOC Dashboard enhancements for NetGuard NOC.
- * Handles SHAP visualizations, Health score gauge, What-If simulator,
- * device timeline charts, active alerts, and failure mode diagnostics.
+ * Intelligence Hub & NOC Operations enhancements for NetGuard NOC.
+ * Handles SHAP visualizations, Health Score gauge, What-If simulator,
+ * device timeline graphs, active alert lifecycle, and Network Topology Map.
  */
 
 let _currentDeviceId = 'manual';
@@ -15,6 +15,7 @@ window.initDashboardAdditions = function (deviceId) {
     loadHistory(_currentDeviceId);
     loadActiveAlerts();
     loadDeviceTimeline(_currentDeviceId);
+    loadTopologyMap();
 };
 
 window._onPredictionResult = function (data) {
@@ -150,7 +151,70 @@ function renderRecommendedActions(actions) {
     });
 }
 
-// ─── Active Alerts & Timelines ────────────────────────────────────────────────
+// ─── Network Topology Map ─────────────────────────────────────────────────────
+async function loadTopologyMap() {
+    const svg = document.getElementById('topology-svg');
+    if (!svg) return;
+    try {
+        const res = await fetch('/api/topology');
+        const data = await res.json();
+        if (data.success && data.nodes) {
+            renderTopologySVG(svg, data.nodes, data.links || []);
+        }
+    } catch (e) {
+        console.warn('Topology fetch failed:', e);
+    }
+}
+
+function renderTopologySVG(svg, nodes, links) {
+    const W = 800, H = 360;
+    const coreX = 400, coreY = 60;
+    
+    let html = `
+    <defs>
+        <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="4" result="blur" />
+            <feComposite in="SourceGraphic" in2="blur" operator="over" />
+        </filter>
+    </defs>`;
+
+    // Draw Core Node
+    const core = nodes.find(n => n.type === 'Core') || { name: 'CORE-ROUTER-01', status: 'HEALTHY' };
+    html += `
+        <circle cx="${coreX}" cy="${coreY}" r="22" fill="#6366f1" filter="url(#glow)"/>
+        <text x="${coreX}" y="${coreY + 5}" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">CORE</text>
+        <text x="${coreX}" y="${coreY + 38}" text-anchor="middle" fill="#a5b4fc" font-size="11">${core.name}</text>
+    `;
+
+    // Layout surrounding edge nodes
+    const edgeNodes = nodes.filter(n => n.type !== 'Core');
+    const totalEdge = edgeNodes.length;
+    const radiusX = 320, radiusY = 180;
+
+    edgeNodes.forEach((node, i) => {
+        const angle = (i / totalEdge) * Math.PI + Math.PI / 8; // arc underneath
+        const nx = coreX + Math.cos(angle) * radiusX - 160 + (i * 45);
+        const ny = coreY + 120 + (i % 2 === 0 ? 0 : 70);
+
+        const statusColor = node.status === 'CRITICAL' ? '#ff1744' : node.status === 'WARNING' ? '#ffb300' : '#00e676';
+
+        // Draw connection line
+        html += `<line x1="${coreX}" y1="${coreY + 22}" x2="${nx}" y2="${ny - 15}" stroke="rgba(255,255,255,0.15)" stroke-width="2" stroke-dasharray="${node.status === 'CRITICAL' ? '4,4' : 'none'}"/>`;
+
+        // Node Circle & Text
+        html += `
+            <g style="cursor:pointer;" onclick="window.initDashboardAdditions('${node.id}')">
+                <circle cx="${nx}" cy="${ny}" r="15" fill="${statusColor}" filter="url(#glow)"/>
+                <text x="${nx}" y="${ny + 4}" text-anchor="middle" fill="#0f172a" font-size="10" font-weight="bold">${node.type === 'Router' ? 'R' : 'SW'}</text>
+                <text x="${nx}" y="${ny + 30}" text-anchor="middle" fill="#e2e8f0" font-size="10" font-weight="600">${node.id}</text>
+            </g>
+        `;
+    });
+
+    svg.innerHTML = html;
+}
+
+// ─── Active Alert Lifecycle ───────────────────────────────────────────────────
 async function loadActiveAlerts() {
     const container = document.getElementById('active-alerts-feed');
     if (!container) return;
@@ -159,12 +223,15 @@ async function loadActiveAlerts() {
         const data = await res.json();
         if (data.success && data.alerts && data.alerts.length > 0) {
             container.innerHTML = data.alerts.map(a => `
-                <div class="alert-feed-item ${a.severity.toLowerCase()}">
-                    <i class="fa-solid ${a.severity === 'CRITICAL' ? 'fa-triangle-exclamation' : 'fa-bell'} font-warning"></i>
-                    <div class="alert-content">
-                        <strong>${a.title}</strong>
-                        <p>${a.message}</p>
-                        <span class="alert-time">${new Date(a.timestamp).toLocaleTimeString()}</span>
+                <div class="alert-feed-item ${a.severity.toLowerCase()}" style="display:flex;justify-content:space-between;align-items:center;padding:10px;border-bottom:1px solid rgba(255,255,255,0.06);">
+                    <div>
+                        <i class="fa-solid ${a.severity === 'CRITICAL' ? 'fa-triangle-exclamation' : 'fa-bell'} font-warning"></i>
+                        <strong>${a.title}</strong> [${a.status}]
+                        <p style="margin:2px 0;font-size:0.75rem;color:var(--text-muted);">${a.message}</p>
+                    </div>
+                    <div style="display:flex;gap:6px;">
+                        ${a.status === 'ACTIVE' ? `<button onclick="acknowledgeAlert(${a.id})" style="background:rgba(255,179,0,0.2);border:1px solid #ffb300;color:#ffb300;border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Ack</button>` : ''}
+                        <button onclick="resolveAlert(${a.id})" style="background:rgba(0,230,118,0.2);border:1px solid #00e676;color:#00e676;border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Resolve</button>
                     </div>
                 </div>
             `).join('');
@@ -175,6 +242,20 @@ async function loadActiveAlerts() {
         console.warn('Alerts fetch failed:', e);
     }
 }
+
+window.acknowledgeAlert = async function(id) {
+    try {
+        await fetch(`/api/alerts/${id}/acknowledge`, { method: 'POST' });
+        loadActiveAlerts();
+    } catch(e) { console.warn(e); }
+};
+
+window.resolveAlert = async function(id) {
+    try {
+        await fetch(`/api/alerts/${id}/resolve`, { method: 'POST' });
+        loadActiveAlerts();
+    } catch(e) { console.warn(e); }
+};
 
 async function loadDeviceTimeline(deviceId) {
     const chartContainer = document.getElementById('device-timeline-chart');
@@ -272,7 +353,7 @@ function renderHistorySparkline(container, records) {
 
     const dots = probs.map((v, i) => {
         const risk = records[i].risk || 'LOW';
-        const dc   = risk === 'HIGH' ? '#ff1744' : risk === 'MEDIUM' ? '#ffb300' : '#00e676';
+        const dc   = risk === 'CRITICAL' || risk === 'HIGH' ? '#ff1744' : risk === 'MEDIUM' ? '#ffb300' : '#00e676';
         return `<circle cx="${toX(i)}" cy="${toY(v)}" r="3.5" fill="${dc}" class="sparkline-dot" data-idx="${i}"/>`;
     }).join('');
 
@@ -300,7 +381,7 @@ function renderHistoryTable(records) {
         const prob = ((r.probability || 0) * 100).toFixed(1) + '%';
         const hs   = r.health_score != null ? r.health_score.toFixed(1) : '—';
         const ftype = r.failure_type || 'NONE';
-        const riskClass = r.risk === 'HIGH' ? 'font-critical' : r.risk === 'MEDIUM' ? 'font-warning' : 'font-accent';
+        const riskClass = r.risk === 'CRITICAL' || r.risk === 'HIGH' ? 'font-critical' : r.risk === 'MEDIUM' ? 'font-warning' : 'font-accent';
         return `<tr>
             <td>${ts}</td>
             <td>${prob}</td>
@@ -374,7 +455,7 @@ function renderWhatIfPanel(whatifData) {
         deltaHealth = (whatifData.health_score  - (baseline.health_score ?? 0)).toFixed(1);
     }
 
-    const probColor   = whatifData.risk === 'HIGH' ? '#ff1744'
+    const probColor   = whatifData.risk === 'CRITICAL' || whatifData.risk === 'HIGH' ? '#ff1744'
                       : whatifData.risk === 'MEDIUM' ? '#ffb300' : '#00e676';
 
     const deltaSign   = v => v > 0 ? `+${v}` : `${v}`;

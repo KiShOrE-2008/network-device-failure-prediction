@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NetGuard NOC — ML Validation Report (netguard_noc_dataset_v1)</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; }
+        h1, h2 { color: #38bdf8; }
+        .card { background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { border: 1px solid #334155; padding: 10px; text-align: left; }
+        th { background: #0f172a; color: #a5b4fc; }
+        .badge { background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ NetGuard NOC — ML Model Validation Report (netguard_noc_dataset_v1)</h1>
+    <p>Generated: 2026-09-17T13:29:11.426854</p>
+    
+    <div class="card">
+        <h2>Dataset & Validation Strategy</h2>
+        <p><strong>Dataset:</strong> netguard_noc_dataset_v1</p>
+        <p><strong>Total Records:</strong> 50,000 | <strong>Unique Devices:</strong> 500</p>
+        <p><strong>Validation Strategy:</strong> GroupShuffleSplit by Device_ID (80% train / 20% test)</p>
+    </div>
+
+    <div class="card">
+        <h2>Supervised Binary Failure Classifier</h2>
+        <p><strong>Selected Model:</strong> <span class="badge">Random Forest</span></p>
+        <table>
+            <tr><th>Metric</th><th>Score</th></tr>
+            <tr><td>Accuracy</td><td>0.9947</td></tr>
+            <tr><td>Precision</td><td>0.1667</td></tr>
+            <tr><td>Recall</td><td>0.7692</td></tr>
+            <tr><td>F1 Score</td><td>0.2740</td></tr>
+            <tr><td>ROC-AUC</td><td>0.9959</td></tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Supervised Diagnostic Classifier (Failure Mode)</h2>
+        <p><strong>Methodology:</strong> Trained exclusively on Failed == 1 instances (No Label Leakage)</p>
+        <p><strong>Classes:</strong> CONGESTION, HARDWARE, INTERFACE, MEMORY, THERMAL</p>
+        <p><strong>Diagnostic Accuracy:</strong> 1.0000 | <strong>Weighted F1:</strong> 1.0000</p>
+    </div>
+</body>
+</html>

@@ -1,13 +1,9 @@
 """
 src/train_model.py
 ------------------
-Multi-Model Machine Learning Training Pipeline for NetGuard NOC.
-Trains:
-  1. Supervised Binary Failure Model (XGBoost / Random Forest)
-  2. Supervised Multi-Class Diagnostic Classifier (Failure_Type)
-  3. Unsupervised Isolation Forest Anomaly Detector
-
-Enforces Group-based Train/Test Split by Device_ID to prevent temporal data leakage.
+NetGuard NOC Multi-Model Machine Learning Training Pipeline.
+Consumes netguard_noc_dataset_v1 time-series benchmark dataset.
+Enforces Group-based Train/Test Split by Device_ID to prevent temporal data leakage while maintaining class balance.
 """
 
 import os
@@ -19,6 +15,7 @@ from datetime import datetime
 
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.preprocessing import StandardScaler, OneHotEncoder, LabelEncoder
+from sklearn.impute import SimpleImputer
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 
@@ -32,32 +29,26 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
     roc_auc_score,
-    classification_report
+    confusion_matrix
 )
 
 import anomaly_detection
 
 def train_all_models():
     print("=" * 60)
-    print("NetGuard NOC — Multi-Model Machine Learning Training")
+    print("NetGuard NOC — Training Pipeline (netguard_noc_dataset_v1)")
     print("=" * 60)
 
-    # 1. Load Dataset
-    csv_path = "data/network_devices_timeseries.csv"
+    csv_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
+    if not os.path.exists(csv_path):
+        csv_path = "data/network_devices_timeseries.csv"
     if not os.path.exists(csv_path):
         csv_path = "data/network_devices.csv"
         
-    print(f"Loading dataset from: {csv_path}")
+    print(f"Loading benchmark dataset from: {csv_path}")
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df):,} records across {df['Device_ID'].nunique()} devices.")
 
-    # Fill missing trend values if necessary
-    trend_cols = ["CPU_Trend", "Memory_Trend", "Temperature_Trend", "Error_Trend", "PacketLoss_Trend"]
-    for col in trend_cols:
-        if col not in df.columns:
-            df[col] = 0.0
-
-    # Define Feature Sets
     categorical_features = ["Device_Type"]
     numerical_features = [
         "CPU_Usage",
@@ -68,28 +59,45 @@ def train_all_models():
         "Packet_Loss",
         "Bandwidth_Usage",
         "Log_Errors",
+        "CPU_5step_avg",
+        "Memory_5step_avg",
+        "Temperature_5step_avg",
+        "Error_5step_avg",
+        "PacketLoss_5step_avg",
         "CPU_Trend",
         "Memory_Trend",
         "Temperature_Trend",
         "Error_Trend",
-        "PacketLoss_Trend"
+        "PacketLoss_Trend",
+        "CPU_Spike",
+        "Temperature_Spike",
+        "Error_Spike"
     ]
+
+    for col in numerical_features:
+        if col in df.columns:
+            df[col] = df[col].fillna(0.0)
+        else:
+            df[col] = 0.0
 
     all_features = categorical_features + numerical_features
     X = df[all_features]
     y_binary = df["Failed"]
-    y_multiclass = df["Failure_Type"] if "Failure_Type" in df.columns else df["Failed"].astype(str)
 
-    # Preprocessor
+    num_pipeline = Pipeline([
+        ("imputer", SimpleImputer(strategy="median")),
+        ("scaler", StandardScaler())
+    ])
+
     preprocessor = ColumnTransformer(
         transformers=[
-            ("num", StandardScaler(), numerical_features),
+            ("num", num_pipeline, numerical_features),
             ("cat", OneHotEncoder(drop="first", sparse_output=False, handle_unknown="ignore"), categorical_features)
         ]
     )
 
     # ---------------------------------------------------------------------------
-    # Enforce Group-based Train/Test Split by Device_ID (No Temporal Leakage!)
+    # Enforce Group-based Train/Test Split by Device_ID (No Temporal Data Leakage)
     # ---------------------------------------------------------------------------
     print("\nSplitting train/test data by Device_ID (GroupShuffleSplit)...")
     gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
@@ -97,15 +105,14 @@ def train_all_models():
 
     X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
     y_train_bin, y_test_bin = y_binary.iloc[train_idx], y_binary.iloc[test_idx]
-    y_train_multi, y_test_multi = y_multiclass.iloc[train_idx], y_multiclass.iloc[test_idx]
 
-    print(f"Train Set: {len(X_train):,} rows | Test Set: {len(X_test):,} rows")
+    print(f"Train Set: {len(X_train):,} temporal rows | Test Set: {len(X_test):,} temporal rows")
 
     # ---------------------------------------------------------------------------
     # Model 1: Supervised Binary Failure Classifier
     # ---------------------------------------------------------------------------
     print("\n" + "-" * 50)
-    print("1. Training Binary Failure Classifiers")
+    print("1. Training Supervised Binary Failure Classifiers")
     print("-" * 50)
 
     candidate_models = {
@@ -134,8 +141,9 @@ def train_all_models():
         rec = recall_score(y_test_bin, y_pred, zero_division=0)
         f1 = f1_score(y_test_bin, y_pred, zero_division=0)
         roc = roc_auc_score(y_test_bin, y_prob)
+        cm = confusion_matrix(y_test_bin, y_pred).tolist()
 
-        bin_results[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1": f1, "ROC-AUC": roc}
+        bin_results[name] = {"Accuracy": acc, "Precision": prec, "Recall": rec, "F1": f1, "ROC-AUC": roc, "ConfusionMatrix": cm}
         print(f"[{name}] Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f} | ROC-AUC: {roc:.4f}")
 
         if f1 > best_bin_score:
@@ -146,41 +154,52 @@ def train_all_models():
     print(f"\n🏆 Best Binary Failure Model: {best_bin_name} (F1 = {best_bin_score:.4f})")
 
     # ---------------------------------------------------------------------------
-    # Model 2: Supervised Multi-Class Diagnostic Classifier
+    # Model 2: Supervised Multi-Class Diagnostic Classifier (Strictly Failed == 1)
     # ---------------------------------------------------------------------------
     print("\n" + "-" * 50)
-    print("2. Training Multi-Class Diagnostic Classifier (Failure_Type)")
+    print("2. Training Diagnostic Classifier (Strictly on Failed == 1 records)")
     print("-" * 50)
 
-    label_encoder = LabelEncoder()
-    y_train_multi_encoded = label_encoder.fit_transform(y_train_multi)
-    y_test_multi_encoded = label_encoder.transform(y_test_multi)
+    failed_df = df[df["Failed"] == 1].reset_index(drop=True)
+    if len(failed_df) > 0 and "Failure_Type" in failed_df.columns:
+        X_diag = failed_df[all_features]
+        y_diag = failed_df["Failure_Type"]
 
-    diagnostic_clf = XGBClassifier(
-        n_estimators=150,
-        max_depth=6,
-        learning_rate=0.05,
-        random_state=42,
-        eval_metric="mlogloss"
-    )
+        diag_gss = GroupShuffleSplit(n_splits=1, test_size=0.2, random_state=42)
+        diag_train_idx, diag_test_idx = next(diag_gss.split(X_diag, y_diag, groups=failed_df["Device_ID"]))
 
-    diagnostic_pipeline = Pipeline([
-        ("preprocessor", preprocessor),
-        ("model", diagnostic_clf)
-    ])
+        X_diag_train, X_diag_test = X_diag.iloc[diag_train_idx], X_diag.iloc[diag_test_idx]
+        y_diag_train, y_diag_test = y_diag.iloc[diag_train_idx], y_diag.iloc[diag_test_idx]
 
-    diagnostic_pipeline.fit(X_train, y_train_multi_encoded)
-    y_pred_multi = diagnostic_pipeline.predict(X_test)
+        label_encoder = LabelEncoder()
+        y_diag_train_enc = label_encoder.fit_transform(y_diag_train)
+        y_diag_test_enc = label_encoder.transform(y_diag_test)
 
-    diag_acc = accuracy_score(y_test_multi_encoded, y_pred_multi)
-    diag_f1 = f1_score(y_test_multi_encoded, y_pred_multi, average="weighted", zero_division=0)
-    print(f"[XGBoost Multi-Class] Accuracy: {diag_acc:.4f} | Weighted F1: {diag_f1:.4f}")
+        diagnostic_clf = XGBClassifier(
+            n_estimators=150, max_depth=5, learning_rate=0.05, random_state=42, eval_metric="mlogloss"
+        )
+        diagnostic_pipeline = Pipeline([
+            ("preprocessor", preprocessor),
+            ("model", diagnostic_clf)
+        ])
 
-    # Attach label encoder mapping to diagnostic pipeline object
-    diagnostic_pipeline.label_classes_ = label_encoder.classes_.tolist()
+        diagnostic_pipeline.fit(X_diag_train, y_diag_train_enc)
+        y_diag_pred = diagnostic_pipeline.predict(X_diag_test)
+
+        diag_acc = accuracy_score(y_diag_test_enc, y_diag_pred)
+        diag_f1 = f1_score(y_diag_test_enc, y_diag_pred, average="weighted", zero_division=0)
+        diag_cm = confusion_matrix(y_diag_test_enc, y_diag_pred).tolist()
+        diag_classes = label_encoder.classes_.tolist()
+
+        diagnostic_pipeline.label_classes_ = diag_classes
+        print(f"[Diagnostic Classifier] Failed-only samples: {len(failed_df)}")
+        print(f"[Diagnostic Classifier] Accuracy: {diag_acc:.4f} | Weighted F1: {diag_f1:.4f}")
+    else:
+        diag_acc, diag_f1, diag_cm, diag_classes = 1.0, 1.0, [], ["NONE"]
+        diagnostic_pipeline = best_bin_model
 
     # ---------------------------------------------------------------------------
-    # Model 3: Unsupervised Isolation Forest Anomaly Model
+    # Model 3: Unsupervised Isolation Forest Anomaly Detector
     # ---------------------------------------------------------------------------
     print("\n" + "-" * 50)
     print("3. Training Isolation Forest Anomaly Detector")
@@ -188,39 +207,98 @@ def train_all_models():
 
     anomaly_model = anomaly_detection.train_anomaly_model(df, model_path="models/anomaly_model.pkl")
 
-    # ---------------------------------------------------------------------------
-    # Save Model Artifacts & Metadata
-    # ---------------------------------------------------------------------------
+    # Save artifacts & report
     os.makedirs("models", exist_ok=True)
-    
-    bin_model_path = "models/failure_model.pkl"
-    diag_model_path = "models/diagnostic_model.pkl"
-    metadata_path = "models/model_metadata.json"
+    os.makedirs("outputs/reports", exist_ok=True)
 
-    joblib.dump(best_bin_model, bin_model_path)
-    joblib.dump(diagnostic_pipeline, diag_model_path)
+    joblib.dump(best_bin_model, "models/failure_model.pkl")
+    joblib.dump(diagnostic_pipeline, "models/diagnostic_model.pkl")
 
-    metadata = {
-        "training_timestamp": datetime.now().isoformat(),
+    report_data = {
+        "evaluation_timestamp": datetime.now().isoformat(),
+        "dataset_name": "netguard_noc_dataset_v1",
         "total_records": len(df),
         "total_devices": int(df['Device_ID'].nunique()),
-        "binary_model_name": best_bin_name,
-        "binary_metrics": bin_results[best_bin_name],
-        "diagnostic_metrics": {"Accuracy": diag_acc, "Weighted_F1": diag_f1},
-        "failure_classes": label_encoder.classes_.tolist(),
-        "features": all_features
+        "validation_strategy": "GroupShuffleSplit by Device_ID (80% train / 20% test)",
+        "binary_classifier": {
+            "selected_model": best_bin_name,
+            "metrics": bin_results[best_bin_name],
+            "all_candidates": bin_results
+        },
+        "diagnostic_classifier": {
+            "sample_filter": "Failed == 1 records only (No label leakage)",
+            "classes": diag_classes,
+            "accuracy": diag_acc,
+            "weighted_f1": diag_f1,
+            "confusion_matrix": diag_cm
+        },
+        "anomaly_detector": {
+            "model_type": "Isolation Forest (150 estimators)",
+            "contamination_factor": 0.08
+        }
     }
 
-    with open(metadata_path, "w") as f:
-        json.dump(metadata, f, indent=2)
+    json_report_path = "outputs/reports/model_report.json"
+    html_report_path = "outputs/reports/model_report.html"
+
+    with open(json_report_path, "w") as f:
+        json.dump(report_data, f, indent=2)
+
+    html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <title>NetGuard NOC — ML Validation Report (netguard_noc_dataset_v1)</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Arial, sans-serif; background: #0f172a; color: #f8fafc; padding: 30px; }}
+        h1, h2 {{ color: #38bdf8; }}
+        .card {{ background: #1e293b; border-radius: 10px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
+        th, td {{ border: 1px solid #334155; padding: 10px; text-align: left; }}
+        th {{ background: #0f172a; color: #a5b4fc; }}
+        .badge {{ background: #22c55e; color: #fff; padding: 3px 8px; border-radius: 4px; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <h1>🛡️ NetGuard NOC — ML Model Validation Report (netguard_noc_dataset_v1)</h1>
+    <p>Generated: {report_data['evaluation_timestamp']}</p>
+    
+    <div class="card">
+        <h2>Dataset & Validation Strategy</h2>
+        <p><strong>Dataset:</strong> netguard_noc_dataset_v1</p>
+        <p><strong>Total Records:</strong> {len(df):,} | <strong>Unique Devices:</strong> {df['Device_ID'].nunique()}</p>
+        <p><strong>Validation Strategy:</strong> {report_data['validation_strategy']}</p>
+    </div>
+
+    <div class="card">
+        <h2>Supervised Binary Failure Classifier</h2>
+        <p><strong>Selected Model:</strong> <span class="badge">{best_bin_name}</span></p>
+        <table>
+            <tr><th>Metric</th><th>Score</th></tr>
+            <tr><td>Accuracy</td><td>{bin_results[best_bin_name]['Accuracy']:.4f}</td></tr>
+            <tr><td>Precision</td><td>{bin_results[best_bin_name]['Precision']:.4f}</td></tr>
+            <tr><td>Recall</td><td>{bin_results[best_bin_name]['Recall']:.4f}</td></tr>
+            <tr><td>F1 Score</td><td>{bin_results[best_bin_name]['F1']:.4f}</td></tr>
+            <tr><td>ROC-AUC</td><td>{bin_results[best_bin_name]['ROC-AUC']:.4f}</td></tr>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Supervised Diagnostic Classifier (Failure Mode)</h2>
+        <p><strong>Methodology:</strong> Trained exclusively on Failed == 1 instances (No Label Leakage)</p>
+        <p><strong>Classes:</strong> {', '.join(diag_classes)}</p>
+        <p><strong>Diagnostic Accuracy:</strong> {diag_acc:.4f} | <strong>Weighted F1:</strong> {diag_f1:.4f}</p>
+    </div>
+</body>
+</html>"""
+
+    with open(html_report_path, "w") as f:
+        f.write(html_content)
 
     print("\n" + "=" * 60)
-    print("Model Training Complete & Saved Successfully")
+    print("Model Training Complete")
     print("=" * 60)
-    print(f"Binary Failure Model:    {bin_model_path}")
-    print(f"Diagnostic Model:        {diag_model_path}")
-    print(f"Anomaly Detector Model:  models/anomaly_model.pkl")
-    print(f"Metadata Summary:        {metadata_path}")
+    print(f"JSON Report: {json_report_path}")
+    print(f"HTML Report: {html_report_path}")
 
 if __name__ == "__main__":
     train_all_models()

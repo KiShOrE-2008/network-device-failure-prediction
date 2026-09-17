@@ -1,0 +1,113 @@
+{
+  "evaluation_timestamp": "2026-09-17T13:29:11.426854",
+  "dataset_name": "netguard_noc_dataset_v1",
+  "total_records": 50000,
+  "total_devices": 500,
+  "validation_strategy": "GroupShuffleSplit by Device_ID (80% train / 20% test)",
+  "binary_classifier": {
+    "selected_model": "Random Forest",
+    "metrics": {
+      "Accuracy": 0.9947,
+      "Precision": 0.16666666666666666,
+      "Recall": 0.7692307692307693,
+      "F1": 0.273972602739726,
+      "ROC-AUC": 0.9958715560998529,
+      "ConfusionMatrix": [
+        [
+          9937,
+          50
+        ],
+        [
+          3,
+          10
+        ]
+      ]
+    },
+    "all_candidates": {
+      "Logistic Regression": {
+        "Accuracy": 0.9806,
+        "Precision": 0.06280193236714976,
+        "Recall": 1.0,
+        "F1": 0.11818181818181818,
+        "ROC-AUC": 0.9966880020950313,
+        "ConfusionMatrix": [
+          [
+            9793,
+            194
+          ],
+          [
+            0,
+            13
+          ]
+        ]
+      },
+      "Random Forest": {
+        "Accuracy": 0.9947,
+        "Precision": 0.16666666666666666,
+        "Recall": 0.7692307692307693,
+        "F1": 0.273972602739726,
+        "ROC-AUC": 0.9958715560998529,
+        "ConfusionMatrix": [
+          [
+            9937,
+            50
+          ],
+          [
+            3,
+            10
+          ]
+        ]
+      },
+      "XGBoost": {
+        "Accuracy": 0.9985,
+        "Precision": 0.0,
+        "Recall": 0.0,
+        "F1": 0.0,
+        "ROC-AUC": 0.9971270343754572,
+        "ConfusionMatrix": [
+          [
+            9985,
+            2
+          ],
+          [
+            13,
+            0
+          ]
+        ]
+      }
+    }
+  },
+  "diagnostic_classifier": {
+    "sample_filter": "Failed == 1 records only (No label leakage)",
+    "classes": [
+      "CONGESTION",
+      "HARDWARE",
+      "INTERFACE",
+      "MEMORY",
+      "THERMAL"
+    ],
+    "accuracy": 1.0,
+    "weighted_f1": 1.0,
+    "confusion_matrix": [
+      [
+        11,
+        0,
+        0
+      ],
+      [
+        0,
+        3,
+        0
+      ],
+      [
+        0,
+        0,
+        1
+      ]
+    ]
+  },
+  "anomaly_detector": {
+    "model_type": "Isolation Forest (150 estimators)",
+    "contamination_factor": 0.08
+  }
+}

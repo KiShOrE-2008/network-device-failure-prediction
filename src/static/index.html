@@ -212,6 +212,10 @@
                     <i class="fa-solid fa-gauge-high"></i>
                     <span>Telemetry Diagnostics</span>
                 </button>
+                <button class="nav-item" data-tab="topology-tab">
+                    <i class="fa-solid fa-network-wired"></i>
+                    <span>Network Topology</span>
+                </button>
                 <button class="nav-item" data-tab="analytics-tab">
                     <i class="fa-solid fa-chart-pie"></i>
                     <span>Network Analytics</span>
@@ -464,6 +468,19 @@
                             <div class="wi-metric-label">Estimated Window</div>
                             <div class="wi-metric-val" id="wi-window-val" style="font-size:0.75rem;line-height:1.3">—</div>
                         </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB: Network Topology -->
+            <section id="topology-tab" class="tab-content">
+                <div class="card glass-card wide-card">
+                    <div class="card-header">
+                        <h2 class="card-title"><i class="fa-solid fa-network-wired"></i> Interactive NOC Network Topology</h2>
+                        <p class="card-desc">Real-time status map of core routers, edge switches, and server nodes color-coded by health state.</p>
+                    </div>
+                    <div id="topology-map-container" style="min-height: 380px; background: rgba(15,23,42,0.6); border-radius: 12px; position: relative; padding: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <svg id="topology-svg" viewBox="0 0 800 360" style="width: 100%; max-width: 800px; height: 360px;"></svg>
                     </div>
                 </div>
             </section>
