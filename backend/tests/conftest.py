@@ -11,3 +11,12 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 os.chdir(BACKEND_DIR)
+
+import pytest
+import history_store
+
+@pytest.fixture(autouse=True)
+def setup_test_database():
+    history_store.init_db()
+    yield
+

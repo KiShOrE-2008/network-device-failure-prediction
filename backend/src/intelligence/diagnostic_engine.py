@@ -80,10 +80,17 @@ class DiagnosticEngine:
                 try:
                     df_vec = prepare_feature_matrix(pd.DataFrame([telemetry]), DIAGNOSTIC_FEATURE_COLUMNS)
                     probs = self.model.predict_proba(df_vec)[0]
-                    classes = self.model.classes_
                     top_idx = int(np.argmax(probs))
-                    predicted_mode = str(classes[top_idx])
+                    if hasattr(self.model, "label_classes_"):
+                        predicted_mode = str(self.model.label_classes_[top_idx])
+                    else:
+                        raw_cls = self.model.classes_[top_idx]
+                        if isinstance(raw_cls, (int, np.integer)):
+                            predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
+                        else:
+                            predicted_mode = str(raw_cls)
                     confidence = float(probs[top_idx])
+
                 except Exception as e:
                     predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
             else:

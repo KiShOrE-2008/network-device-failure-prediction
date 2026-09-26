@@ -45,6 +45,24 @@ def test_leakage_check_1_hidden_degradation_state_excluded():
     assert 'Hidden_Degradation_State' not in X.columns
 
 
+def test_leakage_check_1b_latent_health_state_excluded():
+    """Test 1b: Latent_Health_State cannot enter feature matrix."""
+    df = pd.DataFrame({
+        'Device_ID': ['DEV-001'] * 5,
+        'Timestamp': pd.date_range('2026-01-01', periods=5, freq='1h'),
+        'CPU_Usage': [10.0, 20.0, 30.0, 40.0, 50.0],
+        'Latent_Health_State': [0.9, 0.8, 0.5, 0.2, 0.0]
+    })
+    df = compute_rolling_features(df)
+
+    with pytest.raises(ValueError, match="Leakage detected"):
+        prepare_feature_matrix(df, feature_cols=FEATURE_COLUMNS + ['Latent_Health_State'])
+
+    X = prepare_feature_matrix(df)
+    assert 'Latent_Health_State' not in X.columns
+
+
+
 def test_leakage_check_2_failed_excluded():
     """Test 2: Failed cannot enter feature matrix."""
     df = pd.DataFrame({

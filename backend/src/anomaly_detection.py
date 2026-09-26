@@ -88,7 +88,8 @@ def predict_anomaly(telemetry: dict, model=None, model_path="models/anomaly_mode
     if model is not None:
         try:
             raw_score = model.score_samples(df_input)[0]
-            anomaly_pct = float(np.clip((0.15 - raw_score) / 0.55 * 100.0, 0.0, 100.0))
+            # IsolationForest score_samples: ~ -0.35 for normal, ~ -0.75 for anomaly
+            anomaly_pct = float(np.clip((-0.35 - raw_score) / 0.40 * 100.0, 0.0, 100.0))
         except Exception:
             anomaly_pct = _heuristic_anomaly_score(input_row)
     else:
@@ -136,8 +137,9 @@ def predict_anomaly_batch(df: pd.DataFrame, model=None, model_path="models/anoma
     if model is not None:
         try:
             raw_scores = model.score_samples(X_batch)
-            scores = [round(float(np.clip((0.15 - s) / 0.55 * 100.0, 0.0, 100.0)), 1) for s in raw_scores]
+            scores = [round(float(np.clip((-0.35 - s) / 0.40 * 100.0, 0.0, 100.0)), 1) for s in raw_scores]
             return scores
+
         except Exception as e:
             print(f"⚠️ Error during batch anomaly prediction: {e}")
 

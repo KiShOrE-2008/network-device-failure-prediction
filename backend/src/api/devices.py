@@ -59,12 +59,17 @@ def get_device_detail(device_id: str):
             "vendor": meta["vendor"],
             "model": meta["model"],
             "location": meta["location"],
-            "risk": "LOW",
-            "failure_probability": 0.05,
-            "health_score": 95.0,
+            "risk": "UNKNOWN",
+            "prediction_available": False,
+            "model_status": "UNAVAILABLE",
+            "failure_probability": None,
+            "failure_probability_pct": None,
+            "heuristic_risk_score": 0.0,
+            "health_score": 100.0,
             "predicted_failure": "NONE",
             "recommended_actions": ["Operational status nominal."],
-            "telemetry": {"cpu": 35.0, "memory": 45.0, "temperature": 42.0, "errors": 0, "packet_loss": 0.0}
+            "telemetry": {"cpu": 0.0, "memory": 0.0, "temperature": 0.0, "errors": 0, "packet_loss": 0.0}
+
         }
 
     # Fetch historical prediction logs

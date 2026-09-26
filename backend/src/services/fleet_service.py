@@ -1,29 +1,27 @@
 """
 src/services/fleet_service.py
 ------------------------------
-Fleet Intelligence Service for NetGuard NOC.
-Wraps FleetPredictor to manage fleet-wide inference, summary metrics,
-and risk ranking.
+Fleet Intelligence & Batch Predictor Service.
 """
 
-from typing import Dict, Any, List
+import os
+import sys
+from typing import Dict, List, Any
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
 from fleet_predictor import FleetPredictor
 
 
 class FleetService:
-    def __init__(self,
-                 failure_model_path: str = "models/failure_model.pkl",
-                 diagnostic_model_path: str = "models/diagnostic_model.pkl",
-                 anomaly_model_path: str = "models/anomaly_model.pkl"):
-        self.predictor = FleetPredictor(
-            failure_model_path=failure_model_path,
-            diagnostic_model_path=diagnostic_model_path,
-            anomaly_model_path=anomaly_model_path
-        )
+    def __init__(self):
+        self.predictor = FleetPredictor()
 
     def get_fleet_predictions(self) -> List[Dict[str, Any]]:
         return self.predictor.predict_all()
 
     def get_fleet_summary(self) -> Dict[str, Any]:
-        preds = self.get_fleet_predictions()
-        return self.predictor.get_fleet_summary(preds)
+        predictions = self.get_fleet_predictions()
+        return self.predictor.get_fleet_summary(predictions)

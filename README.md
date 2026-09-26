@@ -20,29 +20,70 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 
 ---
 
-## 🛠️ Project Architecture
+## 🛠️ Project Architecture & End-to-End Pipeline
 
 ```text
-network-device-failure-prediction/
-│
-├── app.py                      # Root delegator script (runs CLI pipeline or --web server)
-├── README.md                   # Complete pipeline documentation (this file)
-├── PROJECT_DESCRIPTION.md      # Comprehensive technical documentation & project guide
-│
-├── frontend/                   # Single Page Application (SPA) frontend directory
-│   ├── index.html              # Dashboard HTML UI (Intelligence Hub + What-If simulator)
-│   ├── style.css               # Modern glassmorphic styling theme
-│   ├── app.js                  # Interactivity & AJAX client JavaScript
-│   ├── app_additions.js        # Health gauge, SHAP bars, history chart & what-if modules
-│   └── logo.png                # NetGuard NOC visual asset
-│
-└── backend/                    # Backend API, AI models, data & test suite
-    ├── app.py                  # Master backend pipeline orchestrator script
-    ├── requirements.txt        # System dependencies
-    │
-    ├── data/                   # Raw & generated CSV datasets and SQLite databases
-    │   ├── network_devices.csv # Simulated telemetry dataset
-    │   └── predictions.db      # SQLite prediction history
+                 ┌─────────────────────┐
+                 │   Authorized Network │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ NETWORK DISCOVERY   │
+                 │ SNMP/NETCONF/REST   │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ DEVICE INVENTORY    │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ TELEMETRY COLLECTOR │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ FEATURE ENGINEERING │
+                 └──────────┬──────────┘
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+       ┌───────────┐ ┌────────────┐ ┌────────────┐
+       │ FAILURE   │ │  ANOMALY   │ │ DIAGNOSIS  │
+       │ PREDICTOR │ │  DETECTOR  │ │   ENGINE   │
+       └─────┬─────┘ └──────┬─────┘ └──────┬─────┘
+             └──────────────┼──────────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │ FLEET INTELLIGENCE  │
+                 └──────────┬──────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │ INCIDENT ENGINE     │
+                 └──────────┬──────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │     NOC API         │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │   NOC DASHBOARD     │
+                 └─────────────────────┘
+```
+
+### Key System Guarantees & Operational Principles
+- **No Target Leakage:** `Failure_Next_12h` targets are generated after 60/20/20 per-device temporal splitting with a 12-step boundary purge.
+- **Strict Temporal Validation:** 60% Train / 20% Validation / 20% Held-Out Test per device. Model selection strictly uses the validation set.
+- **Model Registry & Schema Validation:** Enforces strict model contracts (`model_registry.py`) before inference.
+- **Zero Fabricated Probabilities:** Returns explicit `prediction_available: false` and `failure_probability: null` when no ML model produced the prediction.
+- **Authorized Production Discovery:** Supports authenticated SNMPv2c/v3, NETCONF, RESTCONF, and Vendor REST API adapters.
+- **Deduplicated Incident Lifecycle:** Transitions alerts (`ACTIVE` -> `ACKNOWLEDGED` -> `RESOLVED`) without creating duplicate incident rows.
+
+---
+
     │
     ├── models/                 # Registry for serialized joblib models
     │   ├── failure_model.pkl   # Optimal binary failure prediction pipeline

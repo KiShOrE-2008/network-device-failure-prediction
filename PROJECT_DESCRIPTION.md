@@ -12,11 +12,12 @@ The **NetGuard NOC System** is a fleet-wide predictive maintenance and network d
 
 ### Key Objectives & 5 Hard Guarantees
 
-1. **Zero Target & Future Leakage**: Temporal 80/20 per-device split with strict 12-step boundary purging (`PURGE_HORIZON = 12`).
+1. **Zero Target & Future Leakage**: Deterministic chronological 60/20/20 per-device split (Train / Validation / Held-Out Test) with strict 12-step boundary purging (`PURGE_HORIZON = 12`).
 2. **Past-Only Rolling Features**: All rolling averages, trends, and spikes compute exclusively over past observations (`shift(1)`).
 3. **No Fake ML Probabilities**: Return explicit `prediction_available: false` and `model_status: "UNAVAILABLE"` when models are missing.
 4. **Authentic Discovery Modes**: Clear separation between `SIMULATION`, `LAB` (socket probing), and `PRODUCTION` (SNMPv2c/v3, NETCONF, RESTCONF, Vendor REST API).
-5. **Single Authoritative Schema Contract**: Centralized `FEATURE_COLUMNS`, `ANOMALY_FEATURE_COLUMNS`, `DIAGNOSTIC_FEATURE_COLUMNS`, and `ModelRegistry` validation.
+5. **Single Authoritative Schema Contract**: Centralized `FEATURE_COLUMNS`, `ANOMALY_FEATURE_COLUMNS`, `DIAGNOSTIC_FEATURE_COLUMNS`, and `ModelRegistry` schema validation (`model_registry.py`).
+
 
 ---
 

@@ -25,9 +25,10 @@ from train_model import train_all_models
 from fleet_predictor import FleetPredictor
 from anomaly_detection import predict_anomaly
 from intelligence.diagnostic_engine import DiagnosticEngine
-from history_store import HistoryStore
+import history_store
 from services.incident_service import IncidentService
 from web_app import app
+
 
 
 def test_full_pipeline_integration(tmp_path):
@@ -105,11 +106,13 @@ def test_full_pipeline_integration(tmp_path):
 
     # 6. Incident Engine Processing
     db_path = str(tmp_path / "test_history.db")
-    history_store = HistoryStore(db_path=db_path)
-    incident_service = IncidentService(db_store=history_store)
+    history_store.DB_PATH = db_path
+    history_store.init_db()
+    incident_service = IncidentService()
 
     incident_summary = incident_service.process_fleet_alerts(predictions)
     assert "total_active_alerts" in incident_summary
+
 
     # 7. Flask REST API Integration Endpoint Verification
     client = app.test_client()

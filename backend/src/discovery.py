@@ -79,6 +79,15 @@ class NetworkDiscoveryEngine:
         else:
             return self._generate_fallback_discovery(cidr)
 
+    def _check_tcp_port(self, ip: str, port: int = 22, timeout: float = 0.15) -> bool:
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(timeout)
+                res = s.connect_ex((ip, port))
+                return res == 0
+        except Exception:
+            return False
+
     def _scan_lab(self, network: ipaddress.IPv4Network | ipaddress.IPv6Network) -> List[Dict[str, Any]]:
         """
         Probes authorized local laboratory IP space via TCP socket reachability (ports 22, 80, 443, 161).
@@ -129,6 +138,12 @@ class NetworkDiscoveryEngine:
         adapter = ProductionDiscovery(network)
         return adapter.discover()
 
+    def _generate_fallback_discovery(self, cidr: str) -> List[Dict[str, Any]]:
+        return [
+            {"device_id": "DEV-0001", "hostname": "core-router-01", "ip_address": "10.1.1.1", "device_type": "Router", "vendor": "Cisco", "model": "ASR-1002X", "location": "DC-1", "rack": "R01", "firmware": "17.6.3", "status": "REACHABLE", "discovery_protocol": "SIMULATED_SNMP"},
+            {"device_id": "DEV-0002", "hostname": "dist-switch-01", "ip_address": "10.1.1.2", "device_type": "Switch", "vendor": "Arista", "model": "7050SX3", "location": "DC-1", "rack": "R02", "firmware": "4.26.1F", "status": "REACHABLE", "discovery_protocol": "SIMULATED_SNMP"}
+        ]
+
 
 class ProductionDiscovery:
     """
@@ -160,13 +175,13 @@ class ProductionDiscovery:
                 "ip_address": str(self.network.network_address),
                 "device_type": "PRODUCTION_ADAPTER",
                 "vendor": "UNKNOWN",
-                "model": "UNKNOWN",
+                "model": "AUTHENTICATED_SNMP_REQUIRED",
                 "location": "PROD_DC",
                 "rack": "N/A",
                 "firmware": "UNKNOWN",
                 "status": "CREDENTIALS_REQUIRED",
                 "authentication": "unauthenticated",
-                "discovery_protocol": "SNMPv3 / NETCONF / RESTCONF / Vendor REST API",
+                "discovery_protocol": "SNMP_V3_REST_API",
                 "supported_adapters": ["SNMPv2c", "SNMPv3", "NETCONF", "RESTCONF", "Vendor REST API"]
             }]
 
@@ -186,6 +201,7 @@ class ProductionDiscovery:
             "authentication": "authenticated",
             "discovery_protocol": protocol_str
         }]
+
 
     def _check_tcp_port(self, ip: str, port: int = 22, timeout: float = 0.15) -> bool:
         try:

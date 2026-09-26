@@ -1,12 +1,12 @@
 {
-  "training_timestamp": "2026-09-27T00:09:33.160666",
+  "training_timestamp": "2026-09-27T00:41:18.587814",
   "dataset_name": "netguard_noc_dataset_v1",
   "dataset_version": "v2.0",
   "total_records": 50000,
   "total_devices": 500,
   "target": "Failure_Next_12h",
-  "validation_strategy": "Deterministic Chronological 80/20 Split Per Device (max(train_ts) < min(test_ts))",
-  "model_version": "2.0.0",
+  "validation_strategy": "Deterministic Chronological 60/20/20 Split Per Device (Train / Validation / Held-Out Test)",
+  "model_version": "3.0.0",
   "selected_binary_model": "XGBoost",
   "feature_schema": {
     "categorical_features": [
@@ -76,20 +76,37 @@
     "MEMORY",
     "THERMAL"
   ],
-  "binary_classifier_metrics": {
-    "Accuracy": 0.9972222222222222,
-    "Precision": 0.9946037099494098,
-    "Recall": 0.9969574036511156,
-    "F1": 0.9957791659631944,
-    "ROC-AUC": 0.9999601057192844,
+  "binary_classifier_validation_metrics": {
+    "Accuracy": 0.98475,
+    "Precision": 0.9621559633027523,
+    "Recall": 0.9677047289504037,
+    "F1": 0.9649223691776884,
+    "ROC-AUC": 0.9979475840579374,
     "ConfusionMatrix": [
       [
-        6026,
-        16
+        3100,
+        33
       ],
       [
-        9,
-        2949
+        28,
+        839
+      ]
+    ]
+  },
+  "binary_classifier_test_metrics": {
+    "Accuracy": 0.9995,
+    "Precision": 1.0,
+    "Recall": 0.9985029940119761,
+    "F1": 0.9992509363295881,
+    "ROC-AUC": 0.9999988761216306,
+    "ConfusionMatrix": [
+      [
+        2664,
+        0
+      ],
+      [
+        2,
+        1334
       ]
     ]
   },

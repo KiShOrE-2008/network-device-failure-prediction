@@ -136,53 +136,73 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
 
     feat_df = pd.DataFrame([clean_telemetry])
 
+    prediction_available = False
+    model_status = "AVAILABLE"
+    proba = None
+    heuristic_risk = min(100.0, float(
+        (cpu_usage / 200.0) * 100 +
+        (temperature / 180.0) * 100 +
+        (interface_errors / 50.0) * 100
+    ))
+
     if failure_model is not None:
         try:
             proba = float(failure_model.predict_proba(feat_df)[0, 1])
+            prediction_available = True
         except Exception as e:
             print(f"⚠️ Prediction error: {e}")
-            proba = float(min(max((cpu_usage/200.0) + (temperature/180.0) + (interface_errors/50.0), 0.0), 1.0))
+            prediction_available = False
+            model_status = "UNAVAILABLE"
     else:
-        proba = float(min(max((cpu_usage/200.0) + (temperature/180.0) + (interface_errors/50.0), 0.0), 1.0))
+        prediction_available = False
+        model_status = "UNAVAILABLE"
 
     # Anomaly Detection
     anomaly_score = 0.0
     is_anomaly = False
     if anomaly_model is not None:
         try:
-            num_cols = ['CPU_Usage', 'Memory_Usage', 'Temperature', 'Interface_Errors', 'Packet_Loss', 'Bandwidth_Usage']
-            raw_score = float(anomaly_model.score_samples(feat_df[num_cols])[0])
-            anomaly_score = round(float(min(max((-raw_score - 0.3) * 200, 0), 100)), 1)
-            is_anomaly = bool(anomaly_model.predict(feat_df[num_cols])[0] == -1)
+            from feature_engineering import ANOMALY_FEATURE_COLUMNS
+            for col in ANOMALY_FEATURE_COLUMNS:
+                if col not in feat_df.columns:
+                    feat_df[col] = 0.0
+            anomaly_input = feat_df[ANOMALY_FEATURE_COLUMNS]
+            raw_score = float(anomaly_model.score_samples(anomaly_input)[0])
+            anomaly_score = round(float(np.clip((-0.35 - raw_score) / 0.40 * 100.0, 0.0, 100.0)), 1)
+            is_anomaly = anomaly_score > 65.0
         except Exception as e:
             print(f"⚠️ Anomaly detection error: {e}")
 
     # Health & Diagnostics
-    risk_level = health_engine.get_risk_level(proba)
-    health_score = health_engine.compute_health_score(clean_telemetry, probability=proba, anomaly_score=anomaly_score)
+    effective_prob = proba if proba is not None else (heuristic_risk / 100.0)
+    risk_level = health_engine.get_risk_level(effective_prob)
+    health_score = health_engine.compute_health_score(clean_telemetry, probability=effective_prob, anomaly_score=anomaly_score)
 
-    diag_info = diagnostic_engine.diagnostic_engine.diagnose(clean_telemetry, failure_probability=proba)
-    log_info  = syslog_collector.syslog_collector.ingest_and_summarize(clean_telemetry, proba)
+    diag_info = diagnostic_engine.diagnostic_engine.diagnose(clean_telemetry, failure_probability=effective_prob)
+    log_info  = syslog_collector.syslog_collector.ingest_and_summarize(clean_telemetry, effective_prob)
     shap_causes = shap_explainer.explain_prediction(clean_telemetry)
 
     report = health_engine.build_health_report(
         clean_telemetry,
-        probability=proba,
+        probability=effective_prob,
         shap_causes=shap_causes,
         anomaly_score=anomaly_score
     )
 
     result = {
-        "failure_probability":     round(proba, 4),
-        "failure_probability_pct": round(proba * 100, 1),
+        "prediction_available":     prediction_available,
+        "model_status":             model_status,
+        "failure_probability":     round(proba, 4) if proba is not None else None,
+        "failure_probability_pct": round(proba * 100, 1) if proba is not None else None,
+        "heuristic_risk_score":     round(heuristic_risk, 1),
         "risk":                    risk_level,
-        "risk_window":             health_engine.risk_window_from_probability(proba),
+        "risk_window":             health_engine.risk_window_from_probability(effective_prob),
         "predicted_failure":       diag_info["failure_type"],
         "diagnostic_confidence":   diag_info["diagnostic_confidence"],
         "anomaly_score":           anomaly_score,
         "is_anomaly":              is_anomaly,
         "health_score":            health_score,
-        "model_name":              get_active_model_name(),
+        "model_name":              get_active_model_name() if prediction_available else "UNAVAILABLE",
         "recommended_actions":     diag_info["recommended_actions"],
         "top_contributing_causes": shap_causes,
         "health_report":           report,
@@ -193,6 +213,7 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
         history_store.log_prediction(device_id, clean_telemetry, result)
 
     return result
+
 
 
 @app.route('/')
