@@ -6,9 +6,16 @@ Generates device metadata, degradation trends, spikes, syslog messages, and mult
 """
 
 import os
+import sys
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
+
+from feature_engineering import compute_rolling_features
 
 # Reproducibility
 np.random.seed(42)
@@ -52,7 +59,7 @@ def generate_network_telemetry(num_devices=500, steps_per_device=100):
         firmware = np.random.choice(FIRMWARE_VERSIONS)
         base_uptime = np.random.uniform(10, 800)
         
-        onset_step = np.random.randint(40, 75) if assigned_mode != "NONE" else 999
+        onset_step = np.random.randint(20, 60) if assigned_mode != "NONE" else 999
         
         device_configs.append({
             "device_id": dev_id,
@@ -114,7 +121,7 @@ def generate_network_telemetry(num_devices=500, steps_per_device=100):
             if t >= onset:
                 progress = (t - onset) / (steps_per_device - onset)
                 # Physical component degrades
-                latent_health -= progress * 2.5 + np.random.uniform(0.5, 1.5)
+                latent_health -= progress * 3.5 + np.random.uniform(0.5, 2.0)
                 latent_health = max(0.0, latent_health)
                 
                 # Telemetry reflects degradation noisy observations
@@ -194,6 +201,7 @@ def generate_network_telemetry(num_devices=500, steps_per_device=100):
                 "Syslog_Critical_Count": syslog_crit,
                 "Latest_Syslog": log_msg,
                 "Latent_Health_State": round(latent_health, 2),
+                "Hidden_Degradation_State": round(latent_health, 2),
                 "Failure_Type": curr_failure_type,
                 "Failed": failed
             })
@@ -203,34 +211,28 @@ def generate_network_telemetry(num_devices=500, steps_per_device=100):
 
     df = pd.DataFrame(records)
     
-    # Engineer Trend & Spike Features
+    # Engineer Trend & Spike Features using authoritative feature_engineering module
     print("Engineering temporal trends & metric spike indicators...")
-    df["Timestamp_dt"] = pd.to_datetime(df["Timestamp"])
-    df = df.sort_values(["Device_ID", "Timestamp_dt"]).reset_index(drop=True)
+    df = compute_rolling_features(df)
     
-    df["CPU_5step_avg"] = df.groupby("Device_ID")["CPU_Usage"].transform(lambda x: x.rolling(5, min_periods=1).mean())
-    df["CPU_Trend"] = df.groupby("Device_ID")["CPU_Usage"].transform(lambda x: x.diff(5).fillna(0))
-    df["CPU_Spike"] = (df["CPU_Usage"] - df["CPU_5step_avg"] > 15.0).astype(int)
-    
-    df["Memory_Trend"] = df.groupby("Device_ID")["Memory_Usage"].transform(lambda x: x.diff(5).fillna(0))
-    
-    df["Temperature_5step_avg"] = df.groupby("Device_ID")["Temperature"].transform(lambda x: x.rolling(5, min_periods=1).mean())
-    df["Temperature_Trend"] = df.groupby("Device_ID")["Temperature"].transform(lambda x: x.diff(5).fillna(0))
-    df["Temperature_Spike"] = (df["Temperature"] - df["Temperature_5step_avg"] > 8.0).astype(int)
-    
-    df["Error_Trend"] = df.groupby("Device_ID")["Interface_Errors"].transform(lambda x: x.diff(5).fillna(0))
-    df["Error_Spike"] = (df["Interface_Errors"] - df["Error_Trend"] > 10).astype(int)
-    
-    df["PacketLoss_Trend"] = df.groupby("Device_ID")["Packet_Loss"].transform(lambda x: x.diff(5).fillna(0))
-    
-    df = df.drop(columns=["Timestamp_dt"])
+    # Calculate Failure_Next_12h 12-hour lookahead target per device
+    print("Computing 12-hour forward-looking failure horizon target (Failure_Next_12h)...")
+    from target_engineering import compute_failure_next_12h_target
+    df = compute_failure_next_12h_target(df, horizon=12)
     
     timeseries_path = "data/network_devices_timeseries.csv"
     main_path = "data/network_devices.csv"
     
+    os.makedirs("data/netguard_noc_dataset_v1", exist_ok=True)
+    v1_ts_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
+    v1_main_path = "data/netguard_noc_dataset_v1/network_devices.csv"
+
     df.to_csv(timeseries_path, index=False)
+    df.to_csv(v1_ts_path, index=False)
+
     latest_df = df.groupby("Device_ID").last().reset_index()
     latest_df.to_csv(main_path, index=False)
+    latest_df.to_csv(v1_main_path, index=False)
     
     print("=" * 60)
     print("NetGuard NOC Telemetry Dataset Successfully Generated")

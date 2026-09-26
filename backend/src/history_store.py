@@ -1,13 +1,14 @@
 """
 src/history_store.py
 --------------------
-Relational SQLite Database & Alert Incident Store for NetGuard NOC.
-Consumes netguard_noc_dataset_v1 device inventory, predictions, telemetry, and discovery tables.
-Enforces incident alert deduplication across predictions.
+Relational SQLite Database & Deduplicated Alert Incident Store for NetGuard NOC.
+Manages devices, telemetry, predictions, alerts/incidents, and discovered_nodes tables.
+Enforces strict incident deduplication and status transitions (ACTIVE -> ACKNOWLEDGED -> RESOLVED).
 """
 
 from __future__ import annotations
 import os
+import sys
 import sqlite3
 import json
 import logging
@@ -31,7 +32,9 @@ CREATE TABLE IF NOT EXISTS devices (
     location     TEXT,
     rack         TEXT,
     firmware     TEXT,
-    created_at   TEXT
+    status       TEXT DEFAULT 'OPERATIONAL',
+    created_at   TEXT,
+    updated_at   TEXT
 );
 """
 
@@ -91,13 +94,19 @@ CREATE TABLE IF NOT EXISTS predictions (
 
 _CREATE_ALERTS_TABLE = """
 CREATE TABLE IF NOT EXISTS alerts (
-    id           INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp    TEXT NOT NULL,
-    device_id    TEXT NOT NULL,
-    severity     TEXT NOT NULL,
-    title        TEXT NOT NULL,
-    message      TEXT NOT NULL,
-    status       TEXT DEFAULT 'ACTIVE'  -- ACTIVE | ACKNOWLEDGED | RESOLVED
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id     TEXT NOT NULL,
+    timestamp     TEXT NOT NULL,
+    severity      TEXT NOT NULL,
+    title         TEXT NOT NULL,
+    message       TEXT NOT NULL,
+    status        TEXT DEFAULT 'ACTIVE', -- ACTIVE | ACKNOWLEDGED | RESOLVED
+    failure_type  TEXT,
+    probability   REAL,
+    anomaly_score REAL,
+    created_at    TEXT,
+    updated_at    TEXT,
+    FOREIGN KEY (device_id) REFERENCES devices (device_id)
 );
 """
 
@@ -118,6 +127,34 @@ def _connect() -> sqlite3.Connection:
     return conn
 
 
+def _migrate_db(conn: sqlite3.Connection):
+    """Safely migrates existing tables to include newly required columns."""
+    cursor = conn.cursor()
+    cursor.execute("PRAGMA table_info(alerts)")
+    alert_cols = [row[1] for row in cursor.fetchall()]
+
+    if "failure_type" not in alert_cols:
+        conn.execute("ALTER TABLE alerts ADD COLUMN failure_type TEXT")
+    if "probability" not in alert_cols:
+        conn.execute("ALTER TABLE alerts ADD COLUMN probability REAL")
+    if "anomaly_score" not in alert_cols:
+        conn.execute("ALTER TABLE alerts ADD COLUMN anomaly_score REAL")
+    if "created_at" not in alert_cols:
+        conn.execute("ALTER TABLE alerts ADD COLUMN created_at TEXT")
+    if "updated_at" not in alert_cols:
+        conn.execute("ALTER TABLE alerts ADD COLUMN updated_at TEXT")
+
+    cursor.execute("PRAGMA table_info(devices)")
+    dev_cols = [row[1] for row in cursor.fetchall()]
+    if "status" not in dev_cols:
+        conn.execute("ALTER TABLE devices ADD COLUMN status TEXT DEFAULT 'OPERATIONAL'")
+    if "created_at" not in dev_cols:
+        conn.execute("ALTER TABLE devices ADD COLUMN created_at TEXT")
+    if "updated_at" not in dev_cols:
+        conn.execute("ALTER TABLE devices ADD COLUMN updated_at TEXT")
+    conn.commit()
+
+
 def init_db() -> None:
     """Idempotently initialize all 5 relational tables and indexes."""
     try:
@@ -128,7 +165,7 @@ def init_db() -> None:
             conn.execute(_CREATE_PREDICTIONS_TABLE)
             conn.execute(_CREATE_ALERTS_TABLE)
             conn.executescript(_CREATE_INDEXES)
-            conn.commit()
+            _migrate_db(conn)
         logger.info("✅ NOC SQLite DB initialized at %s", DB_PATH)
     except Exception as exc:
         logger.error("Failed to initialize NOC database: %s", exc)
@@ -145,6 +182,7 @@ def seed_devices_from_dataset():
     try:
         import pandas as pd
         df = pd.read_csv(csv_path)
+        now_str = datetime.now(timezone.utc).isoformat()
         with _connect() as conn:
             count = conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
             if count == 0:
@@ -152,8 +190,8 @@ def seed_devices_from_dataset():
                     conn.execute(
                         """
                         INSERT OR IGNORE INTO devices 
-                            (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, created_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
                         """,
                         (
                             str(row.get("Device_ID")),
@@ -165,37 +203,12 @@ def seed_devices_from_dataset():
                             str(row.get("Location", "DC-1")),
                             str(row.get("Rack", "R01")),
                             str(row.get("Firmware", "17.6.4")),
-                            datetime.now(timezone.utc).isoformat()
+                            now_str, now_str
                         )
                     )
                 conn.commit()
-                print("✅ Seeded 500 device inventory records into SQLite database.")
-
-        # Seed failure ground truth events if alerts table empty
-        events_path = os.path.join(WORKSPACE_ROOT, "data", "netguard_noc_dataset_v1", "failure_events.csv")
-        if os.path.exists(events_path):
-            df_evt = pd.read_csv(events_path)
-            with _connect() as conn:
-                alert_count = conn.execute("SELECT COUNT(*) FROM alerts").fetchone()[0]
-                if alert_count == 0:
-                    for _, evt in df_evt.head(25).iterrows():
-                        conn.execute(
-                            """
-                            INSERT INTO alerts (timestamp, device_id, severity, title, message, status)
-                            VALUES (?, ?, ?, ?, ?, 'ACTIVE')
-                            """,
-                            (
-                                str(evt.get("Failure_Start", datetime.now(timezone.utc).isoformat())),
-                                str(evt.get("Device_ID")),
-                                str(evt.get("Failure_Severity", "CRITICAL")),
-                                f"{evt.get('Failure_Type')} Incident on {evt.get('Device_ID')}",
-                                f"Historical failure event: {evt.get('Failure_Type')} reached peak severity.",
-                            )
-                        )
-                    conn.commit()
-                    print("✅ Seeded initial NOC alerts from failure_events.csv.")
     except Exception as exc:
-        logger.warning("Device/event seeding failed: %s", exc)
+        logger.warning("Device seeding failed: %s", exc)
 
 
 def register_discovered_devices(discovered: List[Dict[str, Any]]):
@@ -207,14 +220,14 @@ def register_discovered_devices(discovered: List[Dict[str, Any]]):
                 conn.execute(
                     """
                     INSERT OR IGNORE INTO devices
-                        (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
                     """,
                     (
                         dev.get("device_id"), dev.get("hostname"), dev.get("ip_address"),
                         dev.get("device_type"), dev.get("vendor"), dev.get("model"),
                         dev.get("location", "DC-1"), dev.get("rack", "R01"), dev.get("firmware", "1.0"),
-                        now_str
+                        now_str, now_str
                     )
                 )
                 conn.execute(
@@ -236,15 +249,19 @@ def register_discovered_devices(discovered: List[Dict[str, Any]]):
 
 
 def log_prediction(device_id: str, telemetry: Dict[str, Any], result: Dict[str, Any]) -> None:
-    """Logs prediction observation and enforces incident alert deduplication."""
+    """
+    Logs prediction observation and enforces incident alert deduplication.
+    Repeated predictions for the same device DO NOT create duplicate alerts;
+    they update the active/acknowledged incident in place.
+    """
     try:
         timestamp = datetime.now(timezone.utc).isoformat()
         probability = float(result.get("failure_probability", result.get("probability", 0.0)))
-        health_score = result.get("health_score", 100.0)
-        risk = result.get("risk", "LOW")
-        risk_window = result.get("risk_window", "Next 12 hours")
-        failure_type = result.get("predicted_failure", result.get("failure_type", "NONE"))
-        anomaly_score = result.get("anomaly_score", 0.0)
+        health_score = float(result.get("health_score", 100.0))
+        risk = str(result.get("risk", "LOW"))
+        risk_window = str(result.get("risk_window", "Next 12 hours"))
+        failure_type = str(result.get("predicted_failure", result.get("failure_type", "NONE")))
+        anomaly_score = float(result.get("anomaly_score", 0.0))
         is_anomaly = 1 if anomaly_score > 70 or result.get("is_anomaly") else 0
 
         telemetry_json = json.dumps(telemetry)
@@ -264,32 +281,37 @@ def log_prediction(device_id: str, telemetry: Dict[str, Any], result: Dict[str, 
                 )
             )
 
-            # Deduplicated Alert Lifecycle Logic
+            # Deduplicated Alert Incident Lifecycle
             if risk in ["HIGH", "CRITICAL"] or is_anomaly:
                 severity = "CRITICAL" if risk in ["HIGH", "CRITICAL"] else "WARNING"
                 title = f"{severity} Incident on {device_id}"
                 message = f"Risk: {risk} ({probability*100:.1f}%), Mode: {failure_type}, Anomaly Index: {anomaly_score}%"
 
-                # Check if active or acknowledged incident exists for device_id
+                # Check if an ACTIVE or ACKNOWLEDGED incident exists for device_id
                 existing = conn.execute(
-                    "SELECT id FROM alerts WHERE device_id = ? AND status IN ('ACTIVE', 'ACKNOWLEDGED')",
+                    "SELECT id, status FROM alerts WHERE device_id = ? AND status IN ('ACTIVE', 'ACKNOWLEDGED')",
                     (device_id,)
                 ).fetchone()
 
                 if existing:
-                    # Update existing incident observation instead of creating duplicate alert
-                    conn.execute(
-                        "UPDATE alerts SET timestamp = ?, severity = ?, message = ? WHERE id = ?",
-                        (timestamp, severity, message, existing['id'])
-                    )
-                else:
-                    # Create new incident
+                    # Update existing incident observation in place (do NOT duplicate alert row)
                     conn.execute(
                         """
-                        INSERT INTO alerts (timestamp, device_id, severity, title, message, status)
-                        VALUES (?, ?, ?, ?, ?, 'ACTIVE')
+                        UPDATE alerts 
+                        SET timestamp = ?, severity = ?, message = ?, failure_type = ?, probability = ?, anomaly_score = ?, updated_at = ?
+                        WHERE id = ?
                         """,
-                        (timestamp, device_id, severity, title, message)
+                        (timestamp, severity, message, failure_type, probability, anomaly_score, timestamp, existing['id'])
+                    )
+                else:
+                    # Create new incident record
+                    conn.execute(
+                        """
+                        INSERT INTO alerts 
+                            (device_id, timestamp, severity, title, message, status, failure_type, probability, anomaly_score, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?, ?, ?, ?)
+                        """,
+                        (device_id, timestamp, severity, title, message, failure_type, probability, anomaly_score, timestamp, timestamp)
                     )
 
             conn.commit()
@@ -299,8 +321,9 @@ def log_prediction(device_id: str, telemetry: Dict[str, Any], result: Dict[str, 
 
 def acknowledge_alert(alert_id: int) -> bool:
     try:
+        now_str = datetime.now(timezone.utc).isoformat()
         with _connect() as conn:
-            cursor = conn.execute("UPDATE alerts SET status = 'ACKNOWLEDGED' WHERE id = ?", (alert_id,))
+            cursor = conn.execute("UPDATE alerts SET status = 'ACKNOWLEDGED', updated_at = ? WHERE id = ?", (now_str, alert_id))
             conn.commit()
             return cursor.rowcount > 0
     except Exception as exc:
@@ -310,8 +333,9 @@ def acknowledge_alert(alert_id: int) -> bool:
 
 def resolve_alert(alert_id: int) -> bool:
     try:
+        now_str = datetime.now(timezone.utc).isoformat()
         with _connect() as conn:
-            cursor = conn.execute("UPDATE alerts SET status = 'RESOLVED' WHERE id = ?", (alert_id,))
+            cursor = conn.execute("UPDATE alerts SET status = 'RESOLVED', updated_at = ? WHERE id = ?", (now_str, alert_id))
             conn.commit()
             return cursor.rowcount > 0
     except Exception as exc:
@@ -354,7 +378,7 @@ def get_active_alerts(limit: int = 50) -> List[Dict[str, Any]]:
         with _connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, timestamp, device_id, severity, title, message, status
+                SELECT id, timestamp, device_id, severity, title, message, status, failure_type, probability, anomaly_score, created_at, updated_at
                 FROM alerts
                 WHERE status IN ('ACTIVE', 'ACKNOWLEDGED')
                 ORDER BY timestamp DESC

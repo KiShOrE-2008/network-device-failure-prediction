@@ -1,3 +1,11 @@
+"""
+src/web_app.py
+--------------
+NetGuard NOC Web Application Server.
+Initializes Flask, static SPA asset serving, registers modular API blueprints,
+and provides utility endpoints for manual inference, what-if simulations, and plots.
+"""
+
 import os
 import sys
 import pandas as pd
@@ -36,7 +44,6 @@ app.register_blueprint(discovery_bp)
 history_store.init_db()
 history_store.seed_devices_from_dataset()
 
-
 MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'failure_model.pkl')
 DIAGNOSTIC_MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'diagnostic_model.pkl')
 ANOMALY_MODEL_PATH = os.path.join(WORKSPACE_ROOT, 'models', 'anomaly_model.pkl')
@@ -58,6 +65,7 @@ try:
 except Exception as e:
     print(f"⚠️ Warning loading models: {str(e)}")
 
+
 def get_active_model_name():
     if failure_model is None:
         return "None (Model not trained)"
@@ -66,8 +74,9 @@ def get_active_model_name():
             clf_class = failure_model.named_steps['model'].__class__.__name__
             return clf_class
         return failure_model.__class__.__name__
-    except:
+    except Exception:
         return "Machine Learning Classifier"
+
 
 def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str = "manual") -> dict:
     device_type = str(telemetry.get("Device_Type", "Router")).strip()
@@ -86,17 +95,18 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
     memory_trend     = float(telemetry.get("Memory_Trend", 0.0))
     temp_trend       = float(telemetry.get("Temperature_Trend", 0.0))
     error_trend      = float(telemetry.get("Error_Trend", 0.0))
+
+    cpu_spike        = int(telemetry.get("CPU_Spike", 1 if (cpu_usage > 85 and cpu_trend > 15) else 0))
+    temp_spike       = int(telemetry.get("Temperature_Spike", 1 if (temperature > 75 and temp_trend > 5) else 0))
+    error_spike      = int(telemetry.get("Error_Spike", 1 if (interface_errors > 20 and error_trend > 10) else 0))
+
+    cpu_5step_avg    = float(telemetry.get("CPU_5step_avg", cpu_usage))
+    mem_5step_avg    = float(telemetry.get("Memory_5step_avg", memory_usage))
+    temp_5step_avg   = float(telemetry.get("Temperature_5step_avg", temperature))
+    err_5step_avg    = float(telemetry.get("Error_5step_avg", float(interface_errors)))
+    loss_5step_avg   = float(telemetry.get("PacketLoss_5step_avg", packet_loss))
     loss_trend       = float(telemetry.get("PacketLoss_Trend", 0.0))
-
-    cpu_spike        = int(telemetry.get("CPU_Spike", 1 if cpu_trend > 15 else 0))
-    temp_spike       = int(telemetry.get("Temperature_Spike", 1 if temp_trend > 8 else 0))
-    error_spike      = int(telemetry.get("Error_Spike", 1 if error_trend > 10 else 0))
-
-    cpu_5step        = float(telemetry.get("CPU_5step_avg", cpu_usage))
-    memory_5step     = float(telemetry.get("Memory_5step_avg", memory_usage))
-    temp_5step       = float(telemetry.get("Temperature_5step_avg", temperature))
-    error_5step      = float(telemetry.get("Error_5step_avg", interface_errors))
-    loss_5step       = float(telemetry.get("PacketLoss_5step_avg", packet_loss))
+    syslog_crit      = int(telemetry.get("Syslog_Critical_Count", 0))
 
     clean_telemetry = {
         "Device_Type":            device_type,
@@ -108,87 +118,75 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
         "Packet_Loss":            packet_loss,
         "Bandwidth_Usage":        bandwidth_usage,
         "Log_Errors":             log_errors,
-        "CPU_5step_avg":          cpu_5step,
-        "Memory_5step_avg":       memory_5step,
-        "Temperature_5step_avg":  temp_5step,
-        "Error_5step_avg":        error_5step,
-        "PacketLoss_5step_avg":   loss_5step,
+        "Syslog_Critical_Count":  syslog_crit,
+        "CPU_5step_avg":          cpu_5step_avg,
         "CPU_Trend":              cpu_trend,
-        "Memory_Trend":           memory_trend,
-        "Temperature_Trend":      temp_trend,
-        "Error_Trend":            error_trend,
-        "PacketLoss_Trend":       loss_trend,
         "CPU_Spike":              cpu_spike,
+        "Memory_5step_avg":       mem_5step_avg,
+        "Memory_Trend":           memory_trend,
+        "Temperature_5step_avg":  temp_5step_avg,
+        "Temperature_Trend":      temp_trend,
         "Temperature_Spike":      temp_spike,
-        "Error_Spike":            error_spike
+        "Error_5step_avg":        err_5step_avg,
+        "Error_Trend":            error_trend,
+        "Error_Spike":            error_spike,
+        "PacketLoss_5step_avg":   loss_5step_avg,
+        "PacketLoss_Trend":       loss_trend
     }
 
-    features_df = pd.DataFrame([clean_telemetry])
+    feat_df = pd.DataFrame([clean_telemetry])
 
     if failure_model is not None:
-        prediction  = int(failure_model.predict(features_df)[0])
-        probability = float(failure_model.predict_proba(features_df)[0][1])
-    else:
-        probability = min(1.0, (cpu_usage*0.25 + memory_usage*0.2 + temperature*0.2 + interface_errors*0.1) / 100.0)
-        prediction  = 1 if probability > 0.65 else 0
-
-    anom_res = anomaly_detection.predict_anomaly(clean_telemetry, anomaly_model, ANOMALY_MODEL_PATH)
-
-    ml_failure_type = "NONE"
-    if diagnostic_model is not None and (probability > 0.30 or cpu_usage > 85 or temperature > 80 or interface_errors > 40):
         try:
-            pred_idx = int(diagnostic_model.predict(features_df)[0])
-            if hasattr(diagnostic_model, 'label_classes_') and pred_idx < len(diagnostic_model.label_classes_):
-                ml_failure_type = str(diagnostic_model.label_classes_[pred_idx])
-        except Exception:
-            ml_failure_type = "NONE"
+            proba = float(failure_model.predict_proba(feat_df)[0, 1])
+        except Exception as e:
+            print(f"⚠️ Prediction error: {e}")
+            proba = float(min(max((cpu_usage/200.0) + (temperature/180.0) + (interface_errors/50.0), 0.0), 1.0))
+    else:
+        proba = float(min(max((cpu_usage/200.0) + (temperature/180.0) + (interface_errors/50.0), 0.0), 1.0))
 
-    diag_res = diagnostic_engine.diagnose_failure_mode(clean_telemetry, ml_failure_type, probability)
-    final_failure_type = diag_res["diagnosed_failure_type"]
+    # Anomaly Detection
+    anomaly_score = 0.0
+    is_anomaly = False
+    if anomaly_model is not None:
+        try:
+            num_cols = ['CPU_Usage', 'Memory_Usage', 'Temperature', 'Interface_Errors', 'Packet_Loss', 'Bandwidth_Usage']
+            raw_score = float(anomaly_model.score_samples(feat_df[num_cols])[0])
+            anomaly_score = round(float(min(max((-raw_score - 0.3) * 200, 0), 100)), 1)
+            is_anomaly = bool(anomaly_model.predict(feat_df[num_cols])[0] == -1)
+        except Exception as e:
+            print(f"⚠️ Anomaly detection error: {e}")
 
-    risk = health_engine.get_risk_level(probability)
-    risk_colors = {
-        "LOW": "#00e676",
-        "MEDIUM": "#ffb300",
-        "HIGH": "#ff9100",
-        "CRITICAL": "#ff1744"
-    }
-    color = risk_colors.get(risk, "#00e676")
-    
-    status_texts = {
-        "LOW": "Device condition is currently healthy and operating within nominal parameters.",
-        "MEDIUM": "Moderate degradation detected. Recommend close NOC telemetry monitoring.",
-        "HIGH": "High risk of component failure. Inspect physical optics and process queue.",
-        "CRITICAL": "CRITICAL THREAT: Failure imminent within hours. Execute immediate failover protocol."
-    }
-    status_text = status_texts.get(risk, status_texts["LOW"])
+    # Health & Diagnostics
+    risk_level = health_engine.get_risk_level(proba)
+    health_score = health_engine.compute_health_score(clean_telemetry, probability=proba, anomaly_score=anomaly_score)
 
-    raw_log = str(telemetry.get("Latest_Syslog", "NORMAL_OPERATIONAL_STATE"))
-    log_info = syslog_collector.parse_syslog(raw_log)
+    diag_info = diagnostic_engine.diagnostic_engine.diagnose(clean_telemetry, failure_probability=proba)
+    log_info  = syslog_collector.syslog_collector.ingest_and_summarize(clean_telemetry, proba)
+    shap_causes = shap_explainer.explain_prediction(clean_telemetry)
 
-    shap_causes = shap_explainer.get_shap_causes(clean_telemetry, top_n=5)
-    report = health_engine.build_health_report(clean_telemetry, probability, shap_causes, anom_res["anomaly_score"])
+    report = health_engine.build_health_report(
+        clean_telemetry,
+        probability=proba,
+        shap_causes=shap_causes,
+        anomaly_score=anomaly_score
+    )
 
     result = {
-        "success":              True,
-        "device_id":            device_id,
-        "prediction":           prediction,
-        "probability":          probability,
-        "risk":                 risk,
-        "risk_color":           color,
-        "status_text":          status_text,
-        "model_used":           get_active_model_name(),
-        "health_score":         report["health_score"],
-        "risk_window":          report["risk_window"],
-        "failure_type":         final_failure_type,
-        "diagnosis_narrative":  diag_res["description"],
-        "anomaly_score":        anom_res["anomaly_score"],
-        "is_anomaly":           anom_res["is_anomaly"],
-        "anomalous_features":   anom_res["anomalous_features"],
-        "shap_causes":          shap_causes if shap_causes else report["top_causes"],
-        "recommended_actions":  diag_res["recommended_actions"],
-        "advisory":             diag_res["recommended_actions"],
-        "syslog_summary":       log_info
+        "failure_probability":     round(proba, 4),
+        "failure_probability_pct": round(proba * 100, 1),
+        "risk":                    risk_level,
+        "risk_window":             health_engine.risk_window_from_probability(proba),
+        "predicted_failure":       diag_info["failure_type"],
+        "diagnostic_confidence":   diag_info["diagnostic_confidence"],
+        "anomaly_score":           anomaly_score,
+        "is_anomaly":              is_anomaly,
+        "health_score":            health_score,
+        "model_name":              get_active_model_name(),
+        "recommended_actions":     diag_info["recommended_actions"],
+        "top_contributing_causes": shap_causes,
+        "health_report":           report,
+        "syslog_summary":          log_info
     }
 
     if log_to_history:
@@ -196,9 +194,11 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
 
     return result
 
+
 @app.route('/')
 def index():
-    return app.send_static_file('index.html')
+    return send_from_directory(FRONTEND_DIR, 'index.html')
+
 
 @app.route('/api/predict', methods=['POST'])
 def predict():
@@ -212,6 +212,7 @@ def predict():
     except Exception as e:
         return jsonify({"error": f"Failed to perform prediction: {str(e)}"}), 500
 
+
 @app.route('/api/whatif', methods=['POST'])
 def whatif():
     try:
@@ -223,78 +224,6 @@ def whatif():
     except Exception as e:
         return jsonify({"error": f"What-if inference failed: {str(e)}"}), 500
 
-@app.route('/api/devices', methods=['GET'])
-def get_devices():
-    try:
-        devices = history_store.get_device_inventory()
-        return jsonify({"success": True, "devices": devices})
-    except Exception as e:
-        return jsonify({"error": f"Devices fetch failed: {str(e)}"}), 500
-
-@app.route('/api/topology', methods=['GET'])
-def get_topology():
-    """Returns interactive Network Topology node graph parsed from dataset v1 topology.csv."""
-    top_csv = os.path.join(WORKSPACE_ROOT, 'data', 'netguard_noc_dataset_v1', 'topology.csv')
-    dev_csv = os.path.join(WORKSPACE_ROOT, 'data', 'netguard_noc_dataset_v1', 'network_devices.csv')
-
-    try:
-        nodes = []
-        links = []
-        
-        if os.path.exists(dev_csv):
-            df_dev = pd.read_csv(dev_csv)
-            sample_devs = df_dev.head(12).to_dict(orient="records")
-            for dev in sample_devs:
-                dev_id = str(dev.get("Device_ID"))
-                nodes.append({
-                    "id": dev_id,
-                    "name": str(dev.get("Hostname", dev_id)),
-                    "type": str(dev.get("Device_Type", "Switch")),
-                    "vendor": str(dev.get("Vendor", "Cisco")),
-                    "model": str(dev.get("Model", "ISR-4331")),
-                    "location": str(dev.get("Location", "Chennai DC-1")),
-                    "status": "HEALTHY",
-                    "health": 92.0
-                })
-        else:
-            nodes.append({"id": "DEV-0001", "name": "firewall-0001", "type": "ACCESS_SWITCH", "status": "HEALTHY", "health": 95.0})
-
-        if os.path.exists(top_csv):
-            df_top = pd.read_csv(top_csv)
-            for _, row in df_top.head(20).iterrows():
-                src = str(row.get("Source_Device_ID"))
-                tgt = str(row.get("Target_Device_ID"))
-                rel = str(row.get("Relationship"))
-                if tgt and tgt != "nan":
-                    links.append({"source": tgt, "target": src, "relationship": rel})
-
-        return jsonify({"success": True, "nodes": nodes, "links": links})
-    except Exception as e:
-        return jsonify({"error": f"Topology load failed: {str(e)}"}), 500
-
-@app.route('/api/alerts', methods=['GET'])
-def get_alerts():
-    try:
-        alerts = history_store.get_active_alerts(limit=50)
-        return jsonify({"success": True, "alerts": alerts})
-    except Exception as e:
-        return jsonify({"error": f"Alerts fetch failed: {str(e)}"}), 500
-
-@app.route('/api/alerts/<int:alert_id>/acknowledge', methods=['POST'])
-def acknowledge_alert_route(alert_id):
-    try:
-        res = history_store.acknowledge_alert(alert_id)
-        return jsonify({"success": res, "alert_id": alert_id, "status": "ACKNOWLEDGED"})
-    except Exception as e:
-        return jsonify({"error": f"Failed to acknowledge alert: {str(e)}"}), 500
-
-@app.route('/api/alerts/<int:alert_id>/resolve', methods=['POST'])
-def resolve_alert_route(alert_id):
-    try:
-        res = history_store.resolve_alert(alert_id)
-        return jsonify({"success": res, "alert_id": alert_id, "status": "RESOLVED"})
-    except Exception as e:
-        return jsonify({"error": f"Failed to resolve alert: {str(e)}"}), 500
 
 @app.route('/api/history/<device_id>', methods=['GET'])
 def get_device_history(device_id):
@@ -305,11 +234,12 @@ def get_device_history(device_id):
     except Exception as e:
         return jsonify({"error": f"History fetch failed: {str(e)}"}), 500
 
+
 @app.route('/api/device/<device_id>/timeline', methods=['GET'])
 def get_device_timeline(device_id):
-    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'netguard_noc_dataset_v1', 'network_devices_timeseries.csv')
+    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices_timeseries.csv')
     if not os.path.exists(csv_path):
-        csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices_timeseries.csv')
+        csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'netguard_noc_dataset_v1', 'network_devices_timeseries.csv')
     if not os.path.exists(csv_path):
         return jsonify({"error": "Time-series dataset CSV not found."}), 404
     try:
@@ -320,66 +250,12 @@ def get_device_timeline(device_id):
     except Exception as e:
         return jsonify({"error": f"Timeline fetch failed: {str(e)}"}), 500
 
-@app.route('/api/history', methods=['GET'])
-def get_global_history():
-    try:
-        records = history_store.get_recent_global(limit=30)
-        return jsonify({"success": True, "records": records})
-    except Exception as e:
-        return jsonify({"error": f"Global history fetch failed: {str(e)}"}), 500
-
-@app.route('/api/stats', methods=['GET'])
-def get_stats():
-    csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'netguard_noc_dataset_v1', 'network_devices_timeseries.csv')
-    if not os.path.exists(csv_path):
-        csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices_timeseries.csv')
-    if not os.path.exists(csv_path):
-        csv_path = os.path.join(WORKSPACE_ROOT, 'data', 'network_devices.csv')
-
-    if not os.path.exists(csv_path):
-        return jsonify({"error": "Dataset CSV file not found."}), 404
-
-    try:
-        df = pd.read_csv(csv_path)
-        latest_df = df.groupby("Device_ID").last().reset_index() if "Timestamp" in df.columns else df
-            
-        total_devices = len(latest_df)
-        failed_count = int(latest_df['Failed'].sum())
-        healthy_count = total_devices - failed_count
-        health_rate = round((healthy_count / total_devices) * 100, 2)
-        
-        avg_cpu = float(latest_df['CPU_Usage'].mean())
-        avg_mem = float(latest_df['Memory_Usage'].mean())
-        avg_temp = float(latest_df['Temperature'].mean())
-        avg_loss = float(latest_df['Packet_Loss'].mean())
-        
-        device_types = latest_df['Device_Type'].value_counts().to_dict()
-        failure_types = latest_df['Failure_Type'].value_counts().to_dict() if 'Failure_Type' in latest_df.columns else {}
-
-        return jsonify({
-            "success": True,
-            "dataset_name": "netguard_noc_dataset_v1",
-            "total_devices": total_devices,
-            "failed_count": failed_count,
-            "healthy_count": healthy_count,
-            "health_rate": health_rate,
-            "avg_cpu": round(avg_cpu, 2),
-            "avg_mem": round(avg_mem, 2),
-            "avg_temp": round(avg_temp, 2),
-            "avg_loss": round(avg_loss, 2),
-            "routers_count": int(device_types.get('ROUTER', device_types.get('Router', 0))),
-            "switches_count": int(device_types.get('ACCESS_SWITCH', device_types.get('Switch', 0))),
-            "failure_types_breakdown": failure_types,
-            "active_model": get_active_model_name()
-        })
-
-    except Exception as e:
-        return jsonify({"error": f"Failed to load dataset statistics: {str(e)}"}), 500
 
 @app.route('/api/plots/<filename>')
 def serve_plot(filename):
     plots_dir = os.path.join(WORKSPACE_ROOT, 'outputs')
     return send_from_directory(plots_dir, filename)
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

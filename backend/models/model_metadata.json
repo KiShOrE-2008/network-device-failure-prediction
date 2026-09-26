@@ -1,41 +1,144 @@
 {
-  "training_timestamp": "2026-09-17T11:51:14.764693",
+  "training_timestamp": "2026-09-26T23:44:26.420301",
+  "dataset_name": "netguard_noc_dataset_v1",
+  "dataset_version": "v2.0",
   "total_records": 50000,
   "total_devices": 500,
-  "binary_model_name": "XGBoost",
-  "binary_metrics": {
-    "Accuracy": 0.9907,
-    "Precision": 0.9254843517138599,
-    "Recall": 0.9352409638554217,
-    "F1": 0.9303370786516854,
-    "ROC-AUC": 0.9986131866798815
+  "target": "Failure_Next_12h",
+  "validation_strategy": "Deterministic Chronological 80/20 Split Per Device (max(train_ts) < min(test_ts))",
+  "model_version": "2.0.0",
+  "selected_binary_model": "XGBoost",
+  "feature_schema": {
+    "categorical_features": [
+      "Device_Type"
+    ],
+    "numerical_features": [
+      "CPU_Usage",
+      "Memory_Usage",
+      "Temperature",
+      "Interface_Errors",
+      "Packet_Loss",
+      "Bandwidth_Usage",
+      "Uptime",
+      "Log_Errors",
+      "Syslog_Critical_Count",
+      "CPU_5step_avg",
+      "CPU_Trend",
+      "CPU_Spike",
+      "Memory_5step_avg",
+      "Memory_Trend",
+      "Temperature_5step_avg",
+      "Temperature_Trend",
+      "Temperature_Spike",
+      "Error_5step_avg",
+      "Error_Trend",
+      "Error_Spike",
+      "PacketLoss_5step_avg",
+      "PacketLoss_Trend"
+    ],
+    "all_features": [
+      "Device_Type",
+      "CPU_Usage",
+      "Memory_Usage",
+      "Temperature",
+      "Interface_Errors",
+      "Packet_Loss",
+      "Bandwidth_Usage",
+      "Uptime",
+      "Log_Errors",
+      "Syslog_Critical_Count",
+      "CPU_5step_avg",
+      "CPU_Trend",
+      "CPU_Spike",
+      "Memory_5step_avg",
+      "Memory_Trend",
+      "Temperature_5step_avg",
+      "Temperature_Trend",
+      "Temperature_Spike",
+      "Error_5step_avg",
+      "Error_Trend",
+      "Error_Spike",
+      "PacketLoss_5step_avg",
+      "PacketLoss_Trend"
+    ],
+    "excluded_columns": [
+      "Hidden_Degradation_State",
+      "Latent_Health_State",
+      "Failed",
+      "Failure_Type",
+      "Failure_Next_12h"
+    ]
   },
-  "diagnostic_metrics": {
-    "Accuracy": 0.989,
-    "Weighted_F1": 0.9883497782041102
-  },
-  "failure_classes": [
+  "diagnostic_classes": [
     "CONGESTION",
     "HARDWARE",
     "INTERFACE",
     "MEMORY",
-    "NONE",
     "THERMAL"
   ],
-  "features": [
-    "Device_Type",
-    "CPU_Usage",
-    "Memory_Usage",
-    "Temperature",
-    "Uptime",
-    "Interface_Errors",
-    "Packet_Loss",
-    "Bandwidth_Usage",
-    "Log_Errors",
-    "CPU_Trend",
-    "Memory_Trend",
-    "Temperature_Trend",
-    "Error_Trend",
-    "PacketLoss_Trend"
-  ]
+  "binary_classifier_metrics": {
+    "Accuracy": 0.9972222222222222,
+    "Precision": 0.9946037099494098,
+    "Recall": 0.9969574036511156,
+    "F1": 0.9957791659631944,
+    "ROC-AUC": 0.9999601057192844,
+    "ConfusionMatrix": [
+      [
+        6026,
+        16
+      ],
+      [
+        9,
+        2949
+      ]
+    ]
+  },
+  "diagnostic_classifier_metrics": {
+    "sample_filter": "Failed == 1 records (chronologically evaluated on validation split)",
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "weighted_f1": 1.0,
+    "confusion_matrix": [
+      [
+        177,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        196,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        214,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        239,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        230
+      ]
+    ]
+  },
+  "anomaly_detector": {
+    "model_type": "Isolation Forest (150 estimators)",
+    "contamination_factor": 0.08
+  }
 }

@@ -1,97 +1,107 @@
 {
-  "evaluation_timestamp": "2026-09-17T14:02:54.722358",
+  "training_timestamp": "2026-09-26T23:44:26.420301",
   "dataset_name": "netguard_noc_dataset_v1",
+  "dataset_version": "v2.0",
   "total_records": 50000,
   "total_devices": 500,
-  "target_variable": "Failure_Next_12h",
-  "validation_strategy": "GroupShuffleSplit by Device_ID (80% train devices / 20% test devices)",
-  "binary_classifier": {
-    "selected_model": "Random Forest",
-    "metrics": {
-      "Accuracy": 0.9959090909090909,
-      "Precision": 0.21951219512195122,
-      "Recall": 0.6923076923076923,
-      "F1": 0.3333333333333333,
-      "ROC-AUC": 0.9943623009515806,
-      "ConfusionMatrix": [
-        [
-          8755,
-          32
-        ],
-        [
-          4,
-          9
-        ]
-      ]
-    },
-    "all_candidates": {
-      "Logistic Regression": {
-        "Accuracy": 0.9784090909090909,
-        "Precision": 0.06403940886699508,
-        "Recall": 1.0,
-        "F1": 0.12037037037037036,
-        "ROC-AUC": 0.9952727368227539,
-        "ConfusionMatrix": [
-          [
-            8597,
-            190
-          ],
-          [
-            0,
-            13
-          ]
-        ]
-      },
-      "Random Forest": {
-        "Accuracy": 0.9959090909090909,
-        "Precision": 0.21951219512195122,
-        "Recall": 0.6923076923076923,
-        "F1": 0.3333333333333333,
-        "ROC-AUC": 0.9943623009515806,
-        "ConfusionMatrix": [
-          [
-            8755,
-            32
-          ],
-          [
-            4,
-            9
-          ]
-        ]
-      },
-      "XGBoost": {
-        "Accuracy": 0.9970454545454546,
-        "Precision": 0.15789473684210525,
-        "Recall": 0.23076923076923078,
-        "F1": 0.1875,
-        "ROC-AUC": 0.99556162512803,
-        "ConfusionMatrix": [
-          [
-            8771,
-            16
-          ],
-          [
-            10,
-            3
-          ]
-        ]
-      }
-    }
-  },
-  "diagnostic_classifier": {
-    "sample_filter": "Failed == 1 records only (No label leakage)",
-    "classes": [
-      "CONGESTION",
-      "HARDWARE",
-      "INTERFACE",
-      "MEMORY",
-      "THERMAL"
+  "target": "Failure_Next_12h",
+  "validation_strategy": "Deterministic Chronological 80/20 Split Per Device (max(train_ts) < min(test_ts))",
+  "model_version": "2.0.0",
+  "selected_binary_model": "XGBoost",
+  "feature_schema": {
+    "categorical_features": [
+      "Device_Type"
     ],
+    "numerical_features": [
+      "CPU_Usage",
+      "Memory_Usage",
+      "Temperature",
+      "Interface_Errors",
+      "Packet_Loss",
+      "Bandwidth_Usage",
+      "Uptime",
+      "Log_Errors",
+      "Syslog_Critical_Count",
+      "CPU_5step_avg",
+      "CPU_Trend",
+      "CPU_Spike",
+      "Memory_5step_avg",
+      "Memory_Trend",
+      "Temperature_5step_avg",
+      "Temperature_Trend",
+      "Temperature_Spike",
+      "Error_5step_avg",
+      "Error_Trend",
+      "Error_Spike",
+      "PacketLoss_5step_avg",
+      "PacketLoss_Trend"
+    ],
+    "all_features": [
+      "Device_Type",
+      "CPU_Usage",
+      "Memory_Usage",
+      "Temperature",
+      "Interface_Errors",
+      "Packet_Loss",
+      "Bandwidth_Usage",
+      "Uptime",
+      "Log_Errors",
+      "Syslog_Critical_Count",
+      "CPU_5step_avg",
+      "CPU_Trend",
+      "CPU_Spike",
+      "Memory_5step_avg",
+      "Memory_Trend",
+      "Temperature_5step_avg",
+      "Temperature_Trend",
+      "Temperature_Spike",
+      "Error_5step_avg",
+      "Error_Trend",
+      "Error_Spike",
+      "PacketLoss_5step_avg",
+      "PacketLoss_Trend"
+    ],
+    "excluded_columns": [
+      "Hidden_Degradation_State",
+      "Latent_Health_State",
+      "Failed",
+      "Failure_Type",
+      "Failure_Next_12h"
+    ]
+  },
+  "diagnostic_classes": [
+    "CONGESTION",
+    "HARDWARE",
+    "INTERFACE",
+    "MEMORY",
+    "THERMAL"
+  ],
+  "binary_classifier_metrics": {
+    "Accuracy": 0.9972222222222222,
+    "Precision": 0.9946037099494098,
+    "Recall": 0.9969574036511156,
+    "F1": 0.9957791659631944,
+    "ROC-AUC": 0.9999601057192844,
+    "ConfusionMatrix": [
+      [
+        6026,
+        16
+      ],
+      [
+        9,
+        2949
+      ]
+    ]
+  },
+  "diagnostic_classifier_metrics": {
+    "sample_filter": "Failed == 1 records (chronologically evaluated on validation split)",
     "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
     "weighted_f1": 1.0,
     "confusion_matrix": [
       [
-        27,
+        177,
         0,
         0,
         0,
@@ -99,7 +109,7 @@
       ],
       [
         0,
-        7,
+        196,
         0,
         0,
         0
@@ -107,7 +117,7 @@
       [
         0,
         0,
-        11,
+        214,
         0,
         0
       ],
@@ -115,7 +125,7 @@
         0,
         0,
         0,
-        10,
+        239,
         0
       ],
       [
@@ -123,7 +133,7 @@
         0,
         0,
         0,
-        10
+        230
       ]
     ]
   },
