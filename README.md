@@ -25,41 +25,52 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 ```text
 network-device-failure-prediction/
 │
-├── data/                       # Holds raw and generated CSV datasets
-│   ├── network_devices.csv     # Simulated telemetry dataset (10,000 records)
-│   └── predictions.db          # SQLite prediction history (auto-created on first run)
+├── app.py                      # Root delegator script (runs CLI pipeline or --web server)
+├── README.md                   # Complete pipeline documentation (this file)
+├── PROJECT_DESCRIPTION.md      # Comprehensive technical documentation & project guide
 │
-├── models/                     # Registry for serialized joblib models
-│   └── failure_model.pkl       # Saved optimal ColumnTransformer + Classifier pipeline
+├── frontend/                   # Single Page Application (SPA) frontend directory
+│   ├── index.html              # Dashboard HTML UI (Intelligence Hub + What-If simulator)
+│   ├── style.css               # Modern glassmorphic styling theme
+│   ├── app.js                  # Interactivity & AJAX client JavaScript
+│   ├── app_additions.js        # Health gauge, SHAP bars, history chart & what-if modules
+│   └── logo.png                # NetGuard NOC visual asset
 │
-├── outputs/                    # Output visual analytics generated during EDA
-│   ├── cpu_vs_failure.png
-│   ├── memory_vs_failure.png
-│   ├── temperature_vs_failure.png
-│   ├── failure_distribution.png
-│   └── correlation_heatmap.png
-│
-├── src/                        # Python codebase
-│   ├── generate_dataset.py     # Generates synthetic network device dataset
-│   ├── eda.py                  # Generates graphs and summary statistics
-│   ├── preprocess.py           # Preprocessing utilities
-│   ├── train_model.py          # Preprocessing + training + evaluation + saving pipeline
-│   ├── predict.py              # CLI utility for inference on new device telemetry
-│   ├── web_app.py              # Flask server backend (v2: enriched predict + new routes)
-│   │
-│   ├── health_engine.py        # [v2] Health score, risk window & cause-ranking engine
-│   ├── shap_explainer.py       # [v2] SHAP TreeExplainer — AI feature attribution
-│   ├── history_store.py        # [v2] SQLite-backed prediction history store
-│   │
-│   └── static/                 # Frontend SPA directory
-│       ├── index.html          # Dashboard HTML UI (v2: Intelligence Hub tab + What-If)
-│       ├── style.css           # Premium glassmorphic styling theme
-│       ├── app.js              # Interactivity & AJAX client JavaScript
-│       └── app_additions.js    # [v2] Health gauge, SHAP bars, history chart, what-if
-│
-├── requirements.txt            # System dependencies
-├── app.py                      # Master pipeline orchestrator script (supports --web)
-└── README.md                   # Complete pipeline documentation (this file)
+└── backend/                    # Backend API, AI models, data & test suite
+    ├── app.py                  # Master backend pipeline orchestrator script
+    ├── requirements.txt        # System dependencies
+    │
+    ├── data/                   # Raw & generated CSV datasets and SQLite databases
+    │   ├── network_devices.csv # Simulated telemetry dataset
+    │   └── predictions.db      # SQLite prediction history
+    │
+    ├── models/                 # Registry for serialized joblib models
+    │   ├── failure_model.pkl   # Optimal binary failure prediction pipeline
+    │   ├── diagnostic_model.pkl# Multi-class diagnostic classifier
+    │   └── anomaly_model.pkl   # Isolation Forest anomaly detector
+    │
+    ├── outputs/                # Visual analytics generated during EDA
+    │   ├── cpu_vs_failure.png
+    │   ├── memory_vs_failure.png
+    │   ├── temperature_vs_failure.png
+    │   ├── failure_distribution.png
+    │   └── correlation_heatmap.png
+    │
+    ├── tests/                  # Automated test suite
+    │   └── test_*.py           # Test coverage for API, models, anomaly, fleet, etc.
+    │
+    └── src/                    # Core Python implementation
+        ├── api/                # Modular REST API blueprints
+        ├── intelligence/       # Diagnostic & root cause intelligence engines
+        ├── monitoring/         # Real-time syslog collectors
+        ├── generate_dataset.py # Synthetic data generator
+        ├── eda.py              # Visual graph generator
+        ├── train_model.py      # Training & evaluation pipeline
+        ├── predict.py          # CLI inference utility
+        ├── web_app.py          # Flask REST API server
+        ├── health_engine.py    # Health score & risk window engine
+        ├── shap_explainer.py   # SHAP AI feature attribution
+        └── history_store.py    # SQLite prediction history store
 ```
 
 ---

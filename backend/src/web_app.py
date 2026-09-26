@@ -17,7 +17,8 @@ import anomaly_detection
 from intelligence import diagnostic_engine
 from monitoring import syslog_collector
 
-app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'static'), static_url_path='')
+FRONTEND_DIR = os.path.abspath(os.path.join(WORKSPACE_ROOT, '..', 'frontend'))
+app = Flask(__name__, static_folder=FRONTEND_DIR, static_url_path='')
 
 # Import and Register Modular Blueprints
 from api.fleet import fleet_bp

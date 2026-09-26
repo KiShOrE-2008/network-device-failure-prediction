@@ -25,36 +25,56 @@ The project is structured modularly to separate data synthesis, exploratory visu
 ```text
 network-device-failure-prediction/
 │
-├── app.py                      # Master pipeline orchestrator script (CLI & Web launcher)
+├── app.py                      # Root delegator script for CLI & Web server execution
 ├── PROJECT_DESCRIPTION.md      # Comprehensive technical documentation & project guide
 ├── README.md                   # Quick-start documentation & repo overview
-├── requirements.txt            # Python dependencies (scikit-learn, xgboost, flask, etc.)
-├── Poster.jpeg                 # Project poster graphic
 │
-├── data/                       # Data storage directory
-│   └── network_devices.csv     # Generated synthetic telemetry dataset (10,000 records)
+├── frontend/                   # Frontend Single Page Application (SPA)
+│   ├── index.html              # Web dashboard interface HTML5 markup
+│   ├── style.css               # Modern styling system & dashboard theme
+│   ├── app.js                  # Real-time AJAX client & dynamic visual chart renderer
+│   ├── app_additions.js        # Extended dashboard interactive modules
+│   └── logo.png                # NetGuard NOC brand icon
 │
-├── models/                     # Model artifact registry
-│   └── failure_model.pkl       # Serialized production ColumnTransformer + XGBoost pipeline
-│
-├── outputs/                    # Output visual analytics generated during EDA
-│   ├── cpu_vs_failure.png      # CPU usage vs failure distribution boxplot
-│   ├── memory_vs_failure.png   # Memory usage vs failure distribution boxplot
-│   ├── temperature_vs_failure.png # Thermal load vs failure boxplot
-│   ├── failure_distribution.png   # Class distribution bar chart
-│   └── correlation_heatmap.png    # Feature Pearson correlation matrix
-│
-└── src/                        # Core Python implementation & Web assets
-    ├── generate_dataset.py     # Physics-informed synthetic dataset generator
-    ├── eda.py                  # Exploratory data analysis & automated chart generator
-    ├── preprocess.py           # Preprocessing utilities & feature definitions
-    ├── train_model.py          # Preprocessing + multi-model training + evaluation pipeline
-    ├── predict.py              # Interactive & non-interactive CLI inference utility
-    ├── web_app.py              # Flask REST API backend server
-    └── static/                 # Frontend Single Page Application (SPA)
-        ├── index.html          # Web dashboard interface HTML5 markup
-        ├── style.css           # Premium glassmorphic styling system
-        └── app.js              # Real-time AJAX client & dynamic gauge renderer
+└── backend/                    # Backend API, AI models, data & test suite
+    ├── app.py                  # Master backend pipeline orchestrator script
+    ├── requirements.txt        # Python dependencies (scikit-learn, xgboost, flask, etc.)
+    │
+    ├── data/                   # Data storage directory
+    │   └── network_devices.csv # Generated synthetic telemetry dataset
+    │
+    ├── models/                 # Model artifact registry
+    │   ├── failure_model.pkl   # Serialized binary failure prediction model
+    │   ├── diagnostic_model.pkl# Multi-class root-cause classifier
+    │   └── anomaly_model.pkl   # Isolation Forest anomaly detector
+    │
+    ├── outputs/                # Visual analytics generated during EDA
+    │   ├── cpu_vs_failure.png
+    │   ├── memory_vs_failure.png
+    │   ├── temperature_vs_failure.png
+    │   ├── failure_distribution.png
+    │   └── correlation_heatmap.png
+    │
+    ├── tests/                  # Automated pytest test suite
+    │   ├── test_alerts.py
+    │   ├── test_anomaly.py
+    │   ├── test_api.py
+    │   ├── test_dataset.py
+    │   ├── test_diagnostics.py
+    │   ├── test_discovery.py
+    │   ├── test_fleet.py
+    │   └── test_models.py
+    │
+    └── src/                    # Core Python analytics & API modules
+        ├── api/                # Modular REST API blueprints (fleet, devices, alerts, etc.)
+        ├── intelligence/       # Diagnostic & root cause intelligence engines
+        ├── monitoring/         # Real-time syslog collectors
+        ├── generate_dataset.py # Physics-informed synthetic dataset generator
+        ├── eda.py              # Exploratory data analysis & chart generator
+        ├── feature_engineering.py # Rolling window & lag feature calculation
+        ├── train_model.py      # Multi-model training & evaluation pipeline
+        ├── predict.py          # Interactive & non-interactive CLI inference utility
+        └── web_app.py          # Flask REST API backend server
 ```
 
 ---
