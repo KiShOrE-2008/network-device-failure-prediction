@@ -8,8 +8,11 @@ Calculates Failure_Next_12h multi-step temporal horizon targets without target l
 import pandas as pd
 import numpy as np
 
+# Standard forecasting target lookahead and purge horizon step count
+PURGE_HORIZON = 12
 
-def compute_failure_next_12h_target(df: pd.DataFrame, horizon: int = 12) -> pd.DataFrame:
+
+def compute_failure_next_12h_target(df: pd.DataFrame, horizon: int = PURGE_HORIZON) -> pd.DataFrame:
     """
     Computes Failure_Next_12h target for time-series observations.
 

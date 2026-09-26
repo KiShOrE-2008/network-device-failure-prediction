@@ -93,51 +93,54 @@ class FleetPredictor:
         X_batch = prepare_feature_matrix(latest_df, FEATURE_COLUMNS)
 
         # Batch Model Inference
+        # Batch Model Inference
         is_fallback = False
+        model_status = "AVAILABLE"
         if self.failure_model is not None:
             try:
                 probs = self.failure_model.predict_proba(X_batch)[:, 1]
             except Exception as e:
                 print(f"[FleetPredictor] Error during batch prediction: {e}")
                 is_fallback = True
-                probs = np.clip(
-                    (latest_df['CPU_Usage'].fillna(0) / 200.0) +
-                    (latest_df['Temperature'].fillna(0) / 180.0) +
-                    (latest_df['Interface_Errors'].fillna(0) / 50.0),
-                    0.0, 1.0
-                ).values
+                model_status = "UNAVAILABLE"
+                probs = [None] * len(latest_df)
         else:
             is_fallback = True
-            probs = np.clip(
-                (latest_df['CPU_Usage'].fillna(0) / 200.0) +
-                (latest_df['Temperature'].fillna(0) / 180.0) +
-                (latest_df['Interface_Errors'].fillna(0) / 50.0),
-                0.0, 1.0
-            ).values
+            model_status = "UNAVAILABLE"
+            probs = [None] * len(latest_df)
 
-        # Batch Anomaly Detection
-        anomaly_scores = []
-        if self.anomaly_model is not None:
-            try:
-                anomaly_features = ['CPU_Usage', 'Memory_Usage', 'Temperature', 'Interface_Errors', 'Packet_Loss', 'Bandwidth_Usage']
-                num_matrix = latest_df[[c for c in anomaly_features if c in latest_df.columns]].fillna(0.0)
-                raw_anomaly = self.anomaly_model.score_samples(num_matrix)
-                anomaly_scores = [round(float(min(max((-s - 0.3) * 200, 0), 100)), 1) for s in raw_anomaly]
-            except Exception:
-                anomaly_scores = [0.0] * len(latest_df)
-        else:
-            anomaly_scores = [0.0] * len(latest_df)
+        # Batch Anomaly Detection using single source of truth pipeline
+        from anomaly_detection import predict_anomaly_batch
+        anomaly_scores = predict_anomaly_batch(latest_df, model=self.anomaly_model, model_path=self.anomaly_model_path)
 
         predictions = []
         for idx, row in latest_df.iterrows():
-            prob = float(probs[idx])
+            prob_raw = probs[idx]
             anomaly_score = float(anomaly_scores[idx]) if idx < len(anomaly_scores) else 0.0
-
             telemetry_dict = row.to_dict()
-            risk_level = get_risk_level(prob)
-            health_score = compute_health_score(telemetry_dict, probability=prob, anomaly_score=anomaly_score)
 
-            diag_info = self.diagnostic_engine.diagnose(telemetry_dict, failure_probability=prob)
+            # Separate heuristic risk score calculation if ML model is unavailable
+            heuristic_risk = min(100.0, float(
+                (row.get('CPU_Usage', 0) / 200.0) * 100 +
+                (row.get('Temperature', 0) / 180.0) * 100 +
+                (row.get('Interface_Errors', 0) / 50.0) * 100
+            ))
+
+            if prob_raw is not None:
+                prob = float(prob_raw)
+                prob_pct = round(prob * 100, 1)
+                prob_val = round(prob, 4)
+                prediction_available = True
+                risk_level = get_risk_level(prob)
+            else:
+                prob = None
+                prob_pct = None
+                prob_val = None
+                prediction_available = False
+                risk_level = "LOW" if heuristic_risk < 30 else ("MEDIUM" if heuristic_risk < 60 else "HIGH")
+
+            health_score = compute_health_score(telemetry_dict, probability=prob if prob is not None else 0.0, anomaly_score=anomaly_score)
+            diag_info = self.diagnostic_engine.diagnose(telemetry_dict, failure_probability=prob if prob is not None else 0.0)
 
             ts_val = row.get('Timestamp', '')
             ts_str = ts_val.isoformat() if hasattr(ts_val, 'isoformat') else str(ts_val)
@@ -153,8 +156,11 @@ class FleetPredictor:
                 "rack": str(row.get('Rack', 'Rack A01')),
                 "firmware": str(row.get('Firmware', '17.6.4')),
                 "timestamp": ts_str,
-                "failure_probability": round(prob, 4),
-                "failure_probability_pct": round(prob * 100, 1),
+                "prediction_available": prediction_available,
+                "model_status": model_status,
+                "failure_probability": prob_val,
+                "failure_probability_pct": prob_pct,
+                "heuristic_risk_score": round(heuristic_risk, 1),
                 "risk": risk_level,
                 "predicted_failure": diag_info["failure_type"],
                 "diagnostic_confidence": diag_info["diagnostic_confidence"],
@@ -175,8 +181,14 @@ class FleetPredictor:
             }
             predictions.append(pred)
 
-        # Rank fleet descending by failure probability
-        predictions.sort(key=lambda x: x["failure_probability"], reverse=True)
+        # Rank fleet descending by failure probability (or heuristic score if ML probability is None)
+        predictions.sort(
+            key=lambda x: (
+                x["failure_probability"] is not None,
+                x["failure_probability"] if x["failure_probability"] is not None else x.get("heuristic_risk_score", 0) / 100.0
+            ),
+            reverse=True
+        )
         return predictions
 
     def get_fleet_summary(self, predictions: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
@@ -191,9 +203,9 @@ class FleetPredictor:
         critical = sum(1 for p in predictions if p["risk"] == "CRITICAL")
 
         health_scores = [p["health_score"] for p in predictions]
-        probabilities = [p["failure_probability"] for p in predictions]
+        probabilities = [p["failure_probability"] for p in predictions if p["failure_probability"] is not None]
 
-        network_health = compute_fleet_health_score(health_scores, probabilities)
+        network_health = compute_fleet_health_score(health_scores, probabilities if probabilities else [0.0])
 
         mode_counts = {}
         for p in predictions:

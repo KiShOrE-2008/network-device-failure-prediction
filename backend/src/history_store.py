@@ -402,5 +402,25 @@ def get_discovered_nodes() -> List[Dict[str, Any]]:
         return []
 
 
+class HistoryStore:
+    def __init__(self, db_path: str = None):
+        if db_path:
+            global DB_PATH
+            DB_PATH = db_path
+        init_db()
+
+    def record_incident(self, device_id: str, failure_type: str, failure_probability: float, severity: str, recommended_actions: list = None, telemetry_snapshot: dict = None) -> bool:
+        return record_incident(device_id, failure_type, failure_probability, severity, recommended_actions, telemetry_snapshot)
+
+    def get_incidents(self, status: str = None) -> List[Dict[str, Any]]:
+        return get_incidents(status=status)
+
+    def update_incident_status(self, incident_id: int, status: str, notes: str = None) -> bool:
+        return update_incident_status(incident_id, status, notes)
+
+    def register_discovered_devices(self, discovered: List[Dict[str, Any]]):
+        return register_discovered_devices(discovered)
+
+
 init_db()
 seed_devices_from_dataset()

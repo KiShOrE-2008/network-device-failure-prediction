@@ -200,6 +200,15 @@ def index():
     return send_from_directory(FRONTEND_DIR, 'index.html')
 
 
+@app.route('/api/v1/health', methods=['GET'])
+def api_v1_health():
+    return jsonify({
+        "status": "HEALTHY",
+        "service": "NetGuard NOC Predictive Intelligence Backend",
+        "model_status": "AVAILABLE" if failure_model is not None else "UNAVAILABLE"
+    }), 200
+
+
 @app.route('/api/predict', methods=['POST'])
 def predict():
     try:
