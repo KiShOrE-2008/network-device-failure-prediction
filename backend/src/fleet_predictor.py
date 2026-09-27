@@ -29,6 +29,8 @@ from health_engine import compute_health_score, compute_fleet_health_score, get_
 
 
 class FleetPredictor:
+    _cache = None
+
     def __init__(self,
                  failure_model_path: str = "models/failure_model.pkl",
                  diagnostic_model_path: str = "models/diagnostic_model.pkl",
@@ -71,7 +73,8 @@ class FleetPredictor:
             csv_path = os.path.join(self.workspace_root, "data", "network_devices.csv")
 
         df = pd.read_csv(csv_path)
-        df = compute_rolling_features(df)
+        if 'CPU_5step_avg' not in df.columns:
+            df = compute_rolling_features(df)
         return df
 
     def predict_all(self, df: pd.DataFrame | None = None) -> List[Dict[str, Any]]:
@@ -81,6 +84,8 @@ class FleetPredictor:
         Returns predictions sorted by failure probability descending.
         """
         if df is None:
+            if FleetPredictor._cache is not None:
+                return FleetPredictor._cache
             df = self.load_fleet_data()
 
         if 'Timestamp' in df.columns and not pd.api.types.is_datetime64_any_dtype(df['Timestamp']):
@@ -189,6 +194,8 @@ class FleetPredictor:
             ),
             reverse=True
         )
+        if df is None:
+            FleetPredictor._cache = predictions
         return predictions
 
     def get_fleet_summary(self, predictions: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:

@@ -75,10 +75,11 @@ def test_full_pipeline_integration(tmp_path):
     # 3. Model Training & Save
     models_dir = tmp_path / "models"
     models_dir.mkdir()
-    os.makedirs("models", exist_ok=True)
+    sample_csv = str(tmp_path / "small_telemetry.csv")
+    df_raw.to_csv(sample_csv, index=False)
     
-    # Train models
-    train_all_models()
+    # Train models on small dataset fast
+    train_all_models(data_path=sample_csv)
 
     assert os.path.exists("models/failure_model.pkl")
     assert os.path.exists("models/diagnostic_model.pkl")

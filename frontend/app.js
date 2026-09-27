@@ -154,8 +154,9 @@ function renderTopFailuresTable(items) {
       <td>${p.hostname}</td>
       <td class="ip-address mono-text" style="color:var(--text-muted);">${p.ip_address}</td>
       <td><span class="badge-risk ${p.risk}">${p.risk}</span></td>
-      <td class="mono-text" style="font-weight:600;">${p.failure_probability_pct}%</td>
+      <td class="mono-text" style="font-weight:600;">${p.failure_probability_pct !== null && p.failure_probability_pct !== undefined ? p.failure_probability_pct + '%' : '<span style="color:var(--text-muted); font-size:11px;">N/A (ML Unavailable)</span>'}</td>
       <td><span style="font-weight:600; color:var(--text-main);">${p.predicted_failure}</span></td>
+
       <td class="mono-text">${p.health_score}</td>
       <td><button class="btn-noc" onclick="event.stopPropagation(); openDeviceDrawer('${p.device_id}')">Inspect →</button></td>
     </tr>
@@ -341,8 +342,9 @@ function renderDevicesTable(devices) {
       <td>${d.vendor}</td>
       <td>${d.location}</td>
       <td><span class="badge-risk ${d.risk}">${d.risk}</span></td>
-      <td class="mono-text">${(d.failure_probability * 100).toFixed(1)}%</td>
+      <td class="mono-text">${d.failure_probability !== null && d.failure_probability !== undefined ? (d.failure_probability * 100).toFixed(1) + '%' : '<span style="color:var(--text-muted); font-size:11px;">N/A (ML Unavailable)</span>'}</td>
       <td class="mono-text">${d.health_score}</td>
+
     </tr>
   `).join('');
 }
@@ -426,7 +428,7 @@ function loadPredictionsData() {
       <td class="device-id mono-text" style="color:var(--accent-cyan);">${p.device_id}</td>
       <td>${p.hostname}</td>
       <td><span class="badge-risk ${p.risk}">${p.risk}</span></td>
-      <td class="mono-text" style="font-weight:600;">${p.failure_probability_pct}%</td>
+      <td class="mono-text" style="font-weight:600;">${p.failure_probability_pct !== null && p.failure_probability_pct !== undefined ? p.failure_probability_pct + '%' : '<span style="color:var(--text-muted); font-size:11px;">N/A (ML Unavailable)</span>'}</td>
       <td>${p.predicted_failure}</td>
       <td class="mono-text">${p.diagnostic_confidence}%</td>
     </tr>
@@ -446,11 +448,12 @@ function loadAnomaliesData() {
       <td class="device-id mono-text" style="color:var(--accent-cyan);">${p.device_id}</td>
       <td>${p.hostname}</td>
       <td class="mono-text" style="font-weight:600; color:var(--accent-cyan);">${p.anomaly_score}%</td>
-      <td class="mono-text">${p.failure_probability_pct}%</td>
+      <td class="mono-text">${p.failure_probability_pct !== null && p.failure_probability_pct !== undefined ? p.failure_probability_pct + '%' : '<span style="color:var(--text-muted); font-size:11px;">N/A</span>'}</td>
       <td><span class="badge-risk ${p.risk}">${p.risk}</span></td>
     </tr>
   `).join('');
 }
+
 
 // -----------------------------------------------------------------------------
 // 7. Fleet Analytics View Loader
@@ -579,9 +582,10 @@ async function openDeviceDrawer(deviceId) {
       body.innerHTML = `
         <div style="margin-bottom:20px;">
           <span class="badge-risk ${dev.risk}" style="font-size:13px; padding:4px 12px;">${dev.risk} RISK</span>
-          <div style="font-size:28px; font-weight:700; color:#fff; margin-top:8px;" class="mono-text">${dev.failure_probability_pct}%</div>
+          <div style="font-size:28px; font-weight:700; color:#fff; margin-top:8px;" class="mono-text">${dev.failure_probability_pct !== null && dev.failure_probability_pct !== undefined ? dev.failure_probability_pct + '%' : '<span style="font-size:18px; color:var(--text-muted);">N/A (ML Model Unavailable)</span>'}</div>
           <div style="font-size:11px; color:var(--text-muted)">Failure Probability Next 12 Hours</div>
         </div>
+
 
         <div class="noc-card" style="margin-bottom:16px;">
           <div class="card-title">Device Telemetry Baseline</div>

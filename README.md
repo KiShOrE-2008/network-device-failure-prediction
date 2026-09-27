@@ -22,6 +22,25 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 
 ## 🛠️ Project Architecture & End-to-End Pipeline
 
+```mermaid
+flowchart TD
+    A[Authorized Network] --> B[Discovery Engine]
+    B --> C[Device Inventory]
+    C --> D[Telemetry Collector]
+    D --> E[Feature Engineering]
+    E --> F[Failure Prediction]
+    E --> G[Anomaly Detection]
+    E --> H[Failure Diagnosis]
+    F --> I[Fleet Intelligence]
+    G --> I
+    H --> I
+    I --> J[Incident Engine]
+    J --> K[SQLite / History]
+    I --> L[REST API]
+    L --> M[NOC Dashboard]
+```
+
+
 ```text
                  ┌─────────────────────┐
                  │   Authorized Network │

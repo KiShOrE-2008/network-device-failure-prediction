@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id     TEXT NOT NULL,
     timestamp     TEXT NOT NULL,
-    probability   REAL NOT NULL,
+    probability   REAL,
     health_score  REAL,
     risk          TEXT,
     risk_window   TEXT,
@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     FOREIGN KEY (device_id) REFERENCES devices (device_id)
 );
 """
+
 
 _CREATE_ALERTS_TABLE = """
 CREATE TABLE IF NOT EXISTS alerts (
@@ -186,26 +187,29 @@ def seed_devices_from_dataset():
         with _connect() as conn:
             count = conn.execute("SELECT COUNT(*) FROM devices").fetchone()[0]
             if count == 0:
-                for _, row in df.iterrows():
-                    conn.execute(
-                        """
-                        INSERT OR IGNORE INTO devices 
-                            (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
-                        """,
-                        (
-                            str(row.get("Device_ID")),
-                            str(row.get("Hostname", f"DEV-{row.get('Device_ID')}")),
-                            str(row.get("IP_Address", "10.10.1.1")),
-                            str(row.get("Device_Type", "Router")),
-                            str(row.get("Vendor", "Cisco")),
-                            str(row.get("Model", "ISR-4331")),
-                            str(row.get("Location", "DC-1")),
-                            str(row.get("Rack", "R01")),
-                            str(row.get("Firmware", "17.6.4")),
-                            now_str, now_str
-                        )
+                seed_params = [
+                    (
+                        str(row.get("Device_ID")),
+                        str(row.get("Hostname", f"DEV-{row.get('Device_ID')}")),
+                        str(row.get("IP_Address", "10.10.1.1")),
+                        str(row.get("Device_Type", "Router")),
+                        str(row.get("Vendor", "Cisco")),
+                        str(row.get("Model", "ISR-4331")),
+                        str(row.get("Location", "DC-1")),
+                        str(row.get("Rack", "R01")),
+                        str(row.get("Firmware", "17.6.4")),
+                        now_str, now_str
                     )
+                    for _, row in df.iterrows()
+                ]
+                conn.executemany(
+                    """
+                    INSERT OR IGNORE INTO devices 
+                        (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
+                    """,
+                    seed_params
+                )
                 conn.commit()
     except Exception as exc:
         logger.warning("Device seeding failed: %s", exc)
@@ -215,34 +219,41 @@ def register_discovered_devices(discovered: List[Dict[str, Any]]):
     """Registers discovered endpoints into devices & discovered_nodes tables."""
     try:
         now_str = datetime.now(timezone.utc).isoformat()
+        dev_params = [
+            (
+                dev.get("device_id"), dev.get("hostname"), dev.get("ip_address"),
+                dev.get("device_type"), dev.get("vendor"), dev.get("model"),
+                dev.get("location", "DC-1"), dev.get("rack", "R01"), dev.get("firmware", "1.0"),
+                now_str, now_str
+            )
+            for dev in discovered
+        ]
+        node_params = [
+            (
+                dev.get("device_id"), dev.get("hostname"), dev.get("ip_address"),
+                dev.get("device_type"), dev.get("vendor"), dev.get("model"),
+                dev.get("firmware", "1.0"), dev.get("status", "REACHABLE"),
+                dev.get("discovery_protocol", "SIMULATED_SNMP"), now_str
+            )
+            for dev in discovered
+        ]
         with _connect() as conn:
-            for dev in discovered:
-                conn.execute(
-                    """
-                    INSERT OR IGNORE INTO devices
-                        (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
-                    """,
-                    (
-                        dev.get("device_id"), dev.get("hostname"), dev.get("ip_address"),
-                        dev.get("device_type"), dev.get("vendor"), dev.get("model"),
-                        dev.get("location", "DC-1"), dev.get("rack", "R01"), dev.get("firmware", "1.0"),
-                        now_str, now_str
-                    )
-                )
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO discovered_nodes
-                        (device_id, hostname, ip_address, device_type, vendor, model, firmware, status, discovery_protocol, discovered_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        dev.get("device_id"), dev.get("hostname"), dev.get("ip_address"),
-                        dev.get("device_type"), dev.get("vendor"), dev.get("model"),
-                        dev.get("firmware", "1.0"), dev.get("status", "REACHABLE"),
-                        dev.get("discovery_protocol", "SIMULATED_SNMP"), now_str
-                    )
-                )
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO devices
+                    (device_id, hostname, ip_address, device_type, vendor, model, location, rack, firmware, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'OPERATIONAL', ?, ?)
+                """,
+                dev_params
+            )
+            conn.executemany(
+                """
+                INSERT OR REPLACE INTO discovered_nodes
+                    (device_id, hostname, ip_address, device_type, vendor, model, firmware, status, discovery_protocol, discovered_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                node_params
+            )
             conn.commit()
     except Exception as exc:
         logger.warning("Register discovered devices failed: %s", exc)
@@ -256,7 +267,8 @@ def log_prediction(device_id: str, telemetry: Dict[str, Any], result: Dict[str, 
     """
     try:
         timestamp = datetime.now(timezone.utc).isoformat()
-        probability = float(result.get("failure_probability", result.get("probability", 0.0)))
+        raw_prob = result.get("failure_probability", result.get("probability"))
+        probability = float(raw_prob) if raw_prob is not None else None
         health_score = float(result.get("health_score", 100.0))
         risk = str(result.get("risk", "LOW"))
         risk_window = str(result.get("risk_window", "Next 12 hours"))
@@ -285,7 +297,9 @@ def log_prediction(device_id: str, telemetry: Dict[str, Any], result: Dict[str, 
             if risk in ["HIGH", "CRITICAL"] or is_anomaly:
                 severity = "CRITICAL" if risk in ["HIGH", "CRITICAL"] else "WARNING"
                 title = f"{severity} Incident on {device_id}"
-                message = f"Risk: {risk} ({probability*100:.1f}%), Mode: {failure_type}, Anomaly Index: {anomaly_score}%"
+                prob_str = f"{probability*100:.1f}%" if probability is not None else "N/A (ML Unavailable)"
+                message = f"Risk: {risk} ({prob_str}), Mode: {failure_type}, Anomaly Index: {anomaly_score}%"
+
 
                 # Check if an ACTIVE or ACKNOWLEDGED incident exists for device_id
                 existing = conn.execute(
