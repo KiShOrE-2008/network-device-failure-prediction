@@ -555,3 +555,20 @@ probabilities = model_pipeline.predict_proba(new_data_df)[:, 1]
 ```
 
 The SHAP explainer (`src/shap_explainer.py`) also loads this pipeline automatically on import and uses `pipeline.named_steps["preprocessor"]` and `pipeline.named_steps["model"]` to compute attributions.
+
+
+## 🧠 Advanced Intelligence Center
+
+NetGuard now includes an operator-focused advanced intelligence layer at **/advanced**. It adds multi-horizon failure forecasting, explainable telemetry factors, security-oriented anomaly signals, topology-based incident correlation, probable root-cause analysis, blast-radius estimation, a failure simulation lab, and safe remediation runbooks.
+
+The advanced layer keeps ML probabilities separate from heuristic risk and labels topology correlation as a probable signal rather than causal proof. Remediation is recommendation-only and requires operator approval.
+
+### Advanced API
+- GET /api/intelligence/capabilities
+- POST /api/intelligence/analyze
+- POST /api/intelligence/root-cause
+- POST /api/intelligence/correlate
+- POST /api/intelligence/impact
+- POST /api/intelligence/security
+- POST /api/intelligence/simulate
+- POST /api/intelligence/remediation
