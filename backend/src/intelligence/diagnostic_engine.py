@@ -2,6 +2,7 @@ import os
 import joblib
 import pandas as pd
 import numpy as np
+from feature_engineering import DIAGNOSTIC_FEATURE_COLUMNS, prepare_feature_matrix
 
 FAILURE_MODES = ["NONE", "THERMAL", "MEMORY", "INTERFACE", "CONGESTION", "HARDWARE"]
 
@@ -77,22 +78,19 @@ class DiagnosticEngine:
         if failure_probability >= 0.30 or temp > 75 or mem > 85 or cpu > 90 or errors > 15:
             if self.model is not None:
                 try:
-                    # Construct feature vector
-                    feat_cols = [
-                        'CPU_Usage', 'Memory_Usage', 'Temperature', 'Interface_Errors',
-                        'Packet_Loss', 'Bandwidth_Usage', 'Uptime', 'Log_Errors',
-                        'Syslog_Critical_Count', 'CPU_5step_avg', 'CPU_Trend', 'CPU_Spike',
-                        'Memory_5step_avg', 'Memory_Trend', 'Temperature_5step_avg',
-                        'Temperature_Trend', 'Temperature_Spike', 'Error_5step_avg',
-                        'Error_Trend', 'Error_Spike', 'PacketLoss_5step_avg', 'PacketLoss_Trend'
-                    ]
-                    vec = [float(telemetry.get(c, 0.0)) for c in feat_cols]
-                    df_vec = pd.DataFrame([vec], columns=feat_cols)
+                    df_vec = prepare_feature_matrix(pd.DataFrame([telemetry]), DIAGNOSTIC_FEATURE_COLUMNS)
                     probs = self.model.predict_proba(df_vec)[0]
-                    classes = self.model.classes_
                     top_idx = int(np.argmax(probs))
-                    predicted_mode = str(classes[top_idx])
+                    if hasattr(self.model, "label_classes_"):
+                        predicted_mode = str(self.model.label_classes_[top_idx])
+                    else:
+                        raw_cls = self.model.classes_[top_idx]
+                        if isinstance(raw_cls, (int, np.integer)):
+                            predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
+                        else:
+                            predicted_mode = str(raw_cls)
                     confidence = float(probs[top_idx])
+
                 except Exception as e:
                     predicted_mode = self._heuristic_diagnose(cpu, temp, mem, errors, packet_loss, bw)
             else:

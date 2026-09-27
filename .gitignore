@@ -13,6 +13,7 @@ ENV/
 
 # Database files & local dynamic stores
 data/*.db
+backend/data/*.db
 data/predictions.db
 *.sqlite3
 

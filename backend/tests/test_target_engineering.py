@@ -9,7 +9,7 @@ SRC_DIR = os.path.join(BASE_DIR, 'src')
 if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
-from target_engineering import compute_failure_next_12h_target
+from target_engineering import compute_failure_next_12h_target, create_temporal_target_splits
 
 
 def test_future_target_does_not_use_current_failure():
@@ -71,3 +71,35 @@ def test_failure_next_12h_uses_same_device():
     dev_a_targets = df_target[df_target["Device_ID"] == "DEV-A"].reset_index(drop=True)
     for idx in range(0, 8):
         assert dev_a_targets.loc[idx, "Failure_Next_12h"] == 0.0, f"DEV-A index {idx} leaked failure from DEV-B"
+
+
+def test_create_temporal_target_splits_purges_boundary_and_prevents_leakage():
+    """
+    Verify that 80/20 raw temporal split + 12-step boundary purge guarantees:
+    1. Test period failures NEVER bleed into training set targets.
+    2. Last 12 steps of raw training partition are purged (not present in train_df).
+    3. max(train_df timestamp) < min(test_df timestamp).
+    """
+    # 100 timesteps: indices 0..79 raw train, 80..99 raw test
+    df = pd.DataFrame({
+        "Device_ID": ["DEV-001"] * 100,
+        "Timestamp": pd.date_range("2026-01-01", periods=100, freq="h"),
+        "Failed": [0] * 100
+    })
+
+    # Failure occurs at index 82 (3rd observation in raw test set)
+    df.loc[82, "Failed"] = 1
+
+    train_df, test_df = create_temporal_target_splits(df, train_ratio=0.8, horizon=12)
+
+    # Raw train is indices 0..79 (80 rows).
+    # Last 12 rows (indices 68..79) are purged because their lookahead window would reach into test set.
+    # Valid train_df must have 68 rows (indices 0..67).
+    assert len(train_df) == 68
+
+    # All Failure_Next_12h targets in train_df MUST be 0.0 (no failure in train period!)
+    assert (train_df["Failure_Next_12h"] == 0.0).all(), "Test failure at t=82 leaked into training targets!"
+
+    # Strict temporal isolation
+    assert train_df["Timestamp"].max() < test_df["Timestamp"].min()
+

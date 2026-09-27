@@ -10,6 +10,7 @@ if SRC_DIR not in sys.path:
     sys.path.insert(0, SRC_DIR)
 
 from train_model import temporal_split_per_device
+from target_engineering import create_temporal_target_splits_3way
 
 
 def test_train_test_are_temporally_separated():
@@ -62,3 +63,22 @@ def test_no_future_timestamp_in_training():
     assert list(train_df["Value"]) == [0, 1, 2, 3, 4, 5, 6, 7]
     assert list(test_df["Value"]) == [8, 9]
     assert train_df["Timestamp"].max() < test_df["Timestamp"].min()
+
+
+def test_create_temporal_target_splits_3way_chronological_isolation():
+    """Verify 60/20/20 chronological train < val < test isolation."""
+    df = pd.DataFrame({
+        "Device_ID": ["DEV-001"] * 100,
+        "Timestamp": pd.date_range("2026-01-01", periods=100, freq="h"),
+        "Failed": [0] * 100
+    })
+
+    train_df, val_df, test_df = create_temporal_target_splits_3way(df, train_ratio=0.6, val_ratio=0.2, horizon=12)
+
+    assert len(train_df) > 0
+    assert len(val_df) > 0
+    assert len(test_df) > 0
+
+    assert train_df["Timestamp"].max() < val_df["Timestamp"].min()
+    assert val_df["Timestamp"].max() < test_df["Timestamp"].min()
+

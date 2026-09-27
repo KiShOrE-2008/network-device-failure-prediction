@@ -5,72 +5,135 @@ A comprehensive machine learning pipeline designed to predict failures in networ
 ---
 
 ## 📖 Table of Contents
-1. [Project Architecture](#project-architecture)
-2. [Data Generation & Physics Simulation](#data-generation--physics-simulation)
-3. [Telemetry Features & Data Dictionary](#telemetry-features--data-dictionary)
-4. [Exploratory Data Analysis (EDA)](#exploratory-data-analysis-eda)
-5. [Preprocessing & Feature Engineering](#preprocessing--feature-engineering)
-6. [Model Architecture & Hyperparameters](#model-architecture--hyperparameters)
-7. [Intelligence Hub — v2 Features](#intelligence-hub--v2-features)
-8. [REST API Reference](#rest-api-reference)
-9. [Installation & Requirements](#installation--requirements)
-10. [Usage Instructions](#usage-instructions)
-11. [Sample Commands & CLI Output](#sample-commands--cli-output)
-12. [Model Persistence & Registration](#model-persistence--registration)
+
+1. [Project Architecture](#️-project-architecture--end-to-end-pipeline)
+2. [Data Generation & Physics Simulation](#-data-generation--physics-simulation)
+3. [Telemetry Features & Data Dictionary](#-telemetry-features--data-dictionary)
+4. [Exploratory Data Analysis (EDA)](#-exploratory-data-analysis-eda)
+5. [Preprocessing & Feature Engineering](#%EF%B8%8F-preprocessing--feature-engineering)
+6. [Model Architecture & Hyperparameters](#-model-architecture--hyperparameters)
+7. [Intelligence Hub — v2 Features](#-intelligence-hub--v2-features)
+8. [REST API Reference](#-rest-api-reference)
+9. [Installation & Requirements](#-installation--requirements)
+10. [Usage Instructions](#-usage-instructions)
+11. [Sample Commands & CLI Output](#%EF%B8%8F-sample-commands--cli-output)
+12. [Model Persistence & Registration](#-model-persistence--registration)
+13. [Advanced Intelligence Center](#-advanced-intelligence-center)
 
 ---
 
-## 🛠️ Project Architecture
+## 🛠️ Project Architecture & End-to-End Pipeline
+
+```mermaid
+flowchart TD
+    A[Authorized Network] --> B[Discovery Engine]
+    B --> C[Device Inventory]
+    C --> D[Telemetry Collector]
+    D --> E[Feature Engineering]
+    E --> F[Failure Prediction]
+    E --> G[Anomaly Detection]
+    E --> H[Failure Diagnosis]
+    F --> I[Fleet Intelligence]
+    G --> I
+    H --> I
+    I --> J[Incident Engine]
+    J --> K[SQLite / History]
+    I --> L[REST API]
+    L --> M[NOC Dashboard]
+```
 
 ```text
-network-device-failure-prediction/
+                 ┌─────────────────────┐
+                 │   Authorized Network │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ NETWORK DISCOVERY   │
+                 │ SNMP/NETCONF/REST   │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ DEVICE INVENTORY    │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ TELEMETRY COLLECTOR │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │ FEATURE ENGINEERING │
+                 └──────────┬──────────┘
+                            │
+             ┌──────────────┼──────────────┐
+             ▼              ▼              ▼
+       ┌───────────┐ ┌────────────┐ ┌────────────┐
+       │ FAILURE   │ │  ANOMALY   │ │ DIAGNOSIS  │
+       │ PREDICTOR │ │  DETECTOR  │ │   ENGINE   │
+       └─────┬─────┘ └──────┬─────┘ └──────┬─────┘
+             └──────────────┼──────────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │ FLEET INTELLIGENCE  │
+                 └──────────┬──────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │ INCIDENT ENGINE     │
+                 └──────────┬──────────┘
+                            ▼
+                 ┌─────────────────────┐
+                 │     NOC API         │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                 ┌─────────────────────┐
+                 │   NOC DASHBOARD     │
+                 └─────────────────────┘
+```
+
+### Key System Guarantees & Operational Principles
+
+- **No Target Leakage:** `Failure_Next_12h` targets are generated after 60/20/20 per-device temporal splitting with a 12-step boundary purge.
+- **Strict Temporal Validation:** 60% Train / 20% Validation / 20% Held-Out Test per device. Model selection strictly uses the validation set.
+- **Model Registry & Schema Validation:** Enforces strict model contracts (`model_registry.py`) before inference.
+- **Zero Fabricated Probabilities:** Returns explicit `prediction_available: false` and `failure_probability: null` when no ML model produced the prediction.
+- **Authorized Production Discovery:** Supports authenticated SNMPv2c/v3, NETCONF, RESTCONF, and Vendor REST API adapters.
+- **Deduplicated Incident Lifecycle:** Transitions alerts (`ACTIVE` -> `ACKNOWLEDGED` -> `RESOLVED`) without creating duplicate incident rows.
+
+---
+
+```text
+.
+├── models/                 # Registry for serialized joblib models
+│   ├── failure_model.pkl   # Optimal binary failure prediction pipeline
+│   ├── diagnostic_model.pkl# Multi-class diagnostic classifier
+│   └── anomaly_model.pkl   # Isolation Forest anomaly detector
 │
-├── app.py                      # Root delegator script (runs CLI pipeline or --web server)
-├── README.md                   # Complete pipeline documentation (this file)
-├── PROJECT_DESCRIPTION.md      # Comprehensive technical documentation & project guide
+├── outputs/                # Visual analytics generated during EDA
+│   ├── cpu_vs_failure.png
+│   ├── memory_vs_failure.png
+│   ├── temperature_vs_failure.png
+│   ├── failure_distribution.png
+│   └── correlation_heatmap.png
 │
-├── frontend/                   # Single Page Application (SPA) frontend directory
-│   ├── index.html              # Dashboard HTML UI (Intelligence Hub + What-If simulator)
-│   ├── style.css               # Modern glassmorphic styling theme
-│   ├── app.js                  # Interactivity & AJAX client JavaScript
-│   ├── app_additions.js        # Health gauge, SHAP bars, history chart & what-if modules
-│   └── logo.png                # NetGuard NOC visual asset
+├── tests/                  # Automated test suite
+│   └── test_*.py           # Test coverage for API, models, anomaly, fleet, etc.
 │
-└── backend/                    # Backend API, AI models, data & test suite
-    ├── app.py                  # Master backend pipeline orchestrator script
-    ├── requirements.txt        # System dependencies
-    │
-    ├── data/                   # Raw & generated CSV datasets and SQLite databases
-    │   ├── network_devices.csv # Simulated telemetry dataset
-    │   └── predictions.db      # SQLite prediction history
-    │
-    ├── models/                 # Registry for serialized joblib models
-    │   ├── failure_model.pkl   # Optimal binary failure prediction pipeline
-    │   ├── diagnostic_model.pkl# Multi-class diagnostic classifier
-    │   └── anomaly_model.pkl   # Isolation Forest anomaly detector
-    │
-    ├── outputs/                # Visual analytics generated during EDA
-    │   ├── cpu_vs_failure.png
-    │   ├── memory_vs_failure.png
-    │   ├── temperature_vs_failure.png
-    │   ├── failure_distribution.png
-    │   └── correlation_heatmap.png
-    │
-    ├── tests/                  # Automated test suite
-    │   └── test_*.py           # Test coverage for API, models, anomaly, fleet, etc.
-    │
-    └── src/                    # Core Python implementation
-        ├── api/                # Modular REST API blueprints
-        ├── intelligence/       # Diagnostic & root cause intelligence engines
-        ├── monitoring/         # Real-time syslog collectors
-        ├── generate_dataset.py # Synthetic data generator
-        ├── eda.py              # Visual graph generator
-        ├── train_model.py      # Training & evaluation pipeline
-        ├── predict.py          # CLI inference utility
-        ├── web_app.py          # Flask REST API server
-        ├── health_engine.py    # Health score & risk window engine
-        ├── shap_explainer.py   # SHAP AI feature attribution
-        └── history_store.py    # SQLite prediction history store
+└── src/                    # Core Python implementation
+    ├── api/                # Modular REST API blueprints
+    ├── intelligence/       # Diagnostic & root cause intelligence engines
+    ├── monitoring/         # Real-time syslog collectors
+    ├── generate_dataset.py # Synthetic data generator
+    ├── eda.py              # Visual graph generator
+    ├── train_model.py      # Training & evaluation pipeline
+    ├── predict.py          # CLI inference utility
+    ├── web_app.py          # Flask REST API server
+    ├── health_engine.py    # Health score & risk window engine
+    ├── shap_explainer.py   # SHAP AI feature attribution
+    └── history_store.py    # SQLite prediction history store
 ```
 
 ---
@@ -141,14 +204,17 @@ Features must undergo transformations before feeding into linear or ensemble mod
 Three different algorithms are trained and evaluated in parallel under `src/train_model.py`:
 
 ### 1. Logistic Regression
+
 - **Parameters**: `max_iter=1000`
 - **Utility**: Serves as a fast, interpretable linear baseline.
 
 ### 2. Random Forest Classifier
+
 - **Parameters**: `n_estimators=200`, `random_state=42`, `class_weight="balanced"`
 - **Utility**: Bagging ensemble, robust to outliers and feature interactions. Weighted classes address sample imbalances.
 
 ### 3. XGBoost Classifier
+
 - **Parameters**: `n_estimators=200`, `max_depth=5`, `learning_rate=0.05`, `random_state=42`, `eval_metric="logloss"`
 - **Utility**: Highly optimized gradient boosted trees. Excels at high-dimensional tabular datasets.
 
@@ -218,6 +284,7 @@ A **What-If Simulator** button in the Diagnostics tab activates a live compariso
 ### `POST /api/predict`
 
 **Request body (JSON):**
+
 ```json
 {
   "device_id":        "DEV-00042",
@@ -234,6 +301,7 @@ A **What-If Simulator** button in the Diagnostics tab activates a live compariso
 ```
 
 **Response (JSON) — v2 enriched:**
+
 ```json
 {
   "success":             true,
@@ -252,12 +320,15 @@ A **What-If Simulator** button in the Diagnostics tab activates a live compariso
 ```
 
 ### `GET /api/history/<device_id>`
+
 Returns `{"success": true, "device_id": "DEV-00042", "records": [...]}` with the last 50 logged predictions for that device.
 
 ### `GET /api/stats`
+
 Dataset-level summary statistics (total devices, failure rate, average metrics, active model name).
 
 ### `GET /api/plots/<filename>`
+
 Serves EDA plot images from `outputs/`.
 
 ---
@@ -265,7 +336,9 @@ Serves EDA plot images from `outputs/`.
 ## 📥 Installation & Requirements
 
 ### 1. Requirements
+
 Ensure you are using Python 3.8+ with a virtual environment. The required libraries are:
+
 - `pandas`
 - `numpy`
 - `matplotlib`
@@ -277,6 +350,7 @@ Ensure you are using Python 3.8+ with a virtual environment. The required librar
 - `shap` (required for AI explainability — v2)
 
 ### 2. Setup Guide
+
 ```bash
 # Activate your virtual environment
 source venv/bin/activate
@@ -290,6 +364,7 @@ pip install -r requirements.txt
 ## 🚀 Usage Instructions
 
 ### Run the Web Diagnostics Dashboard
+
 You can host and run the interactive web interface locally using either:
 
 ```bash
@@ -299,9 +374,11 @@ python app.py --web
 # Option B: Run the web app script directly
 python src/web_app.py
 ```
-Once started, open your web browser and navigate to: **http://localhost:5000**.
+
+Once started, open your web browser and navigate to: [<http://localhost:5000>](http://localhost:5000).
 
 #### Web Dashboard Features
+
 - **Real-Time Telemetry Diagnosis**: Custom sliders with instant predictions (debounced) and an animated SVG risk gauge (Green/Amber/Red indicators).
 - **Quick-presets**: Instantly populate nominal configurations, thermal failures, or congestion scenarios.
 - **Reset to Defaults**: Reset all parameter inputs back to default standard values in one click.
@@ -318,6 +395,7 @@ Once started, open your web browser and navigate to: **http://localhost:5000**.
 ---
 
 ### Run the Pipeline via CLI
+
 You can also execute the batch pipeline using the orchestrator:
 
 ```bash
@@ -353,11 +431,7 @@ python src/predict.py --non-interactive
 
 ```bash
 # Health engine (no model required)
-python -c "
-import sys; sys.path.insert(0, 'src')
-from health_engine import build_health_report
-print(build_health_report({'CPU_Usage':94,'Memory_Usage':70,'Temperature':81,'Interface_Errors':27,'Packet_Loss':8.4,'Bandwidth_Usage':60,'Log_Errors':12}, 0.82))
-"
+python -c "import sys; sys.path.insert(0, 'src'); from health_engine import build_health_report; print(build_health_report({'CPU_Usage':94,'Memory_Usage':70,'Temperature':81,'Interface_Errors':27,'Packet_Loss':8.4,'Bandwidth_Usage':60,'Log_Errors':12}, 0.82))"
 
 # History store (creates data/predictions.db if absent)
 python -c "import sys; sys.path.insert(0, 'src'); import history_store; history_store.init_db(); print('ok')"
@@ -368,6 +442,7 @@ python -c "import sys; sys.path.insert(0, 'src'); import history_store; history_
 ## 🖥️ Sample Commands & CLI Output
 
 ### 1. Dataset Generation Output
+
 ```text
 ==================================================
 Network Device Dataset Generated
@@ -387,6 +462,7 @@ Dataset saved to: data/network_devices.csv
 ```
 
 ### 2. Model Training Output
+
 ```text
 Dataset loaded successfully.
 
@@ -436,6 +512,7 @@ Model saved to: models/failure_model.pkl
 ```
 
 ### 3. Inference / Prediction Output (Interactive Mode)
+
 ```text
 ==================================================
 NETWORK DEVICE FAILURE PREDICTION - INTERACTIVE MODE
@@ -477,6 +554,7 @@ Risk Level:          HIGH
 ## 💾 Model Persistence & Registration
 
 The serialized model is saved to `models/failure_model.pkl` as a unified `scikit-learn` `Pipeline` object containing:
+
 1. `ColumnTransformer` step named `"preprocessor"` (scaling numeric values, encoding categoricals).
 2. The optimized estimator step named `"model"` (e.g., `XGBClassifier`).
 
@@ -495,3 +573,22 @@ probabilities = model_pipeline.predict_proba(new_data_df)[:, 1]
 ```
 
 The SHAP explainer (`src/shap_explainer.py`) also loads this pipeline automatically on import and uses `pipeline.named_steps["preprocessor"]` and `pipeline.named_steps["model"]` to compute attributions.
+
+---
+
+## 🧠 Advanced Intelligence Center
+
+NetGuard now includes an operator-focused advanced intelligence layer at **/advanced**: multi-horizon failure forecasting, explainable telemetry factors, security-oriented anomaly signals, topology-based incident correlation, probable root-cause analysis, blast-radius estimation, a failure simulation lab, and safe remediation runbooks.
+
+The advanced layer keeps ML probabilities separate from heuristic risk and labels topology correlation as a probable signal rather than causal proof. Remediation is recommendation-only and requires operator approval.
+
+### Advanced API
+
+- `GET /api/intelligence/capabilities`
+- `POST /api/intelligence/analyze`
+- `POST /api/intelligence/root-cause`
+- `POST /api/intelligence/correlate`
+- `POST /api/intelligence/impact`
+- `POST /api/intelligence/security`
+- `POST /api/intelligence/simulate`
+- `POST /api/intelligence/remediation`

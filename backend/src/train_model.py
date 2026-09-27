@@ -49,7 +49,7 @@ from feature_engineering import (
     compute_rolling_features,
     prepare_feature_matrix
 )
-from target_engineering import compute_failure_next_12h_target
+from target_engineering import compute_failure_next_12h_target, create_temporal_target_splits, create_temporal_target_splits_3way, PURGE_HORIZON
 
 
 def temporal_split_per_device(df: pd.DataFrame, train_ratio: float = 0.8):
@@ -92,35 +92,34 @@ def train_all_models():
     df = pd.read_csv(csv_path)
     print(f"Loaded {len(df):,} raw records across {df['Device_ID'].nunique()} devices.")
 
-    # 1. Compute leakage-safe rolling features
+    # 1. Compute leakage-safe rolling features (shift(1) insulated)
     df = compute_rolling_features(df)
 
-    # 2. Compute 12-hour lookahead target Failure_Next_12h if not pre-computed
-    if 'Failure_Next_12h' not in df.columns or df['Failure_Next_12h'].isnull().all():
-        df = compute_failure_next_12h_target(df, horizon=12)
-
-    # Filter valid target horizon rows (exclude incomplete boundary rows with NaN target)
-    valid_df = df[df['Failure_Next_12h'].notnull()].copy().reset_index(drop=True)
-    valid_df['Failure_Next_12h'] = valid_df['Failure_Next_12h'].astype(int)
-    print(f"Valid records for Failure_Next_12h forecasting: {len(valid_df):,}")
-
-    # 3. Deterministic Temporal Train/Test Split Per Device (80% past / 20% future per device)
-    print("\nExecuting deterministic temporal 80/20 train/test split per device...")
-    train_df, test_df = temporal_split_per_device(valid_df, train_ratio=0.8)
+    # 2. Deterministic Raw Temporal 60/20/20 Train/Validation/Test Split Per Device + 12-Step Purge
+    print("\nExecuting raw temporal 60/20/20 train/validation/test split per device + 12-step boundary purge...")
+    train_df, val_df, test_df = create_temporal_target_splits_3way(df, train_ratio=0.6, val_ratio=0.2, horizon=PURGE_HORIZON)
 
     # Verify temporal isolation
-    for dev_id in valid_df['Device_ID'].unique()[:5]:
+    unique_devices = df['Device_ID'].unique()
+    for dev_id in unique_devices[:5]:
         dev_tr = train_df[train_df['Device_ID'] == dev_id]
+        dev_va = val_df[val_df['Device_ID'] == dev_id]
         dev_te = test_df[test_df['Device_ID'] == dev_id]
-        if len(dev_tr) > 0 and len(dev_te) > 0:
-            assert dev_tr['Timestamp'].max() < dev_te['Timestamp'].min(), f"Temporal leakage detected on {dev_id}"
+        if len(dev_tr) > 0 and len(dev_va) > 0:
+            assert dev_tr['Timestamp'].max() < dev_va['Timestamp'].min(), f"Train/Val temporal leakage detected on {dev_id}"
+        if len(dev_va) > 0 and len(dev_te) > 0:
+            assert dev_va['Timestamp'].max() < dev_te['Timestamp'].min(), f"Val/Test temporal leakage detected on {dev_id}"
 
-    print(f"Train Set: {len(train_df):,} rows ({train_df['Failure_Next_12h'].sum()} failures)")
-    print(f"Test Set:  {len(test_df):,} rows ({test_df['Failure_Next_12h'].sum()} failures)")
+    print(f"Train Set:      {len(train_df):,} rows ({train_df['Failure_Next_12h'].sum()} failures)")
+    print(f"Validation Set: {len(val_df):,} rows ({val_df['Failure_Next_12h'].sum()} failures)")
+    print(f"Test Set:       {len(test_df):,} rows ({test_df['Failure_Next_12h'].sum()} failures)")
 
     # 4. Prepare Feature Matrices
     X_train = prepare_feature_matrix(train_df, FEATURE_COLUMNS)
     y_train_bin = train_df['Failure_Next_12h']
+
+    X_val = prepare_feature_matrix(val_df, FEATURE_COLUMNS)
+    y_val_bin = val_df['Failure_Next_12h']
 
     X_test = prepare_feature_matrix(test_df, FEATURE_COLUMNS)
     y_test_bin = test_df['Failure_Next_12h']
@@ -141,7 +140,7 @@ def train_all_models():
     # Model 1: Supervised Binary Failure Forecaster (Target: Failure_Next_12h)
     # ---------------------------------------------------------------------------
     print("\n" + "-" * 50)
-    print("1. Training Supervised Binary Failure Forecasters (Target: Failure_Next_12h)")
+    print("1. Training Supervised Binary Failure Forecasters (Validation Model Selection)")
     print("-" * 50)
 
     neg_count = (y_train_bin == 0).sum()
@@ -157,7 +156,7 @@ def train_all_models():
     best_bin_model = None
     best_bin_score = -1.0
     best_bin_name = ""
-    bin_results = {}
+    bin_val_results = {}
 
     for name, clf in candidate_models.items():
         pipeline = Pipeline([
@@ -166,28 +165,42 @@ def train_all_models():
         ])
         
         pipeline.fit(X_train, y_train_bin)
-        y_pred = pipeline.predict(X_test)
-        y_prob = pipeline.predict_proba(X_test)[:, 1]
+        y_pred = pipeline.predict(X_val)
+        y_prob = pipeline.predict_proba(X_val)[:, 1]
 
-        acc = accuracy_score(y_test_bin, y_pred)
-        prec = precision_score(y_test_bin, y_pred, zero_division=0)
-        rec = recall_score(y_test_bin, y_pred, zero_division=0)
-        f1 = f1_score(y_test_bin, y_pred, zero_division=0)
-        roc = roc_auc_score(y_test_bin, y_prob)
-        cm = confusion_matrix(y_test_bin, y_pred).tolist()
+        acc = accuracy_score(y_val_bin, y_pred)
+        prec = precision_score(y_val_bin, y_pred, zero_division=0)
+        rec = recall_score(y_val_bin, y_pred, zero_division=0)
+        f1 = f1_score(y_val_bin, y_pred, zero_division=0)
+        roc = roc_auc_score(y_val_bin, y_prob)
+        cm = confusion_matrix(y_val_bin, y_pred).tolist()
 
-        bin_results[name] = {
+        bin_val_results[name] = {
             "Accuracy": float(acc), "Precision": float(prec),
             "Recall": float(rec), "F1": float(f1), "ROC-AUC": float(roc), "ConfusionMatrix": cm
         }
-        print(f"[{name}] Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f} | ROC-AUC: {roc:.4f}")
+        print(f"[{name} - Validation] Acc: {acc:.4f} | Prec: {prec:.4f} | Rec: {rec:.4f} | F1: {f1:.4f} | ROC-AUC: {roc:.4f}")
 
         if f1 > best_bin_score:
             best_bin_score = f1
             best_bin_model = pipeline
             best_bin_name = name
 
-    print(f"\n🏆 Best Binary Failure Model: {best_bin_name} (F1 = {best_bin_score:.4f})")
+    print(f"\n🏆 Best Binary Failure Model (Selected on Validation Set): {best_bin_name} (Val F1 = {best_bin_score:.4f})")
+
+    # Final Evaluation of Best Model on Held-Out Test Set (NEVER used for selection)
+    y_test_pred = best_bin_model.predict(X_test)
+    y_test_prob = best_bin_model.predict_proba(X_test)[:, 1]
+    final_test_metrics = {
+        "Accuracy": float(accuracy_score(y_test_bin, y_test_pred)),
+        "Precision": float(precision_score(y_test_bin, y_test_pred, zero_division=0)),
+        "Recall": float(recall_score(y_test_bin, y_test_pred, zero_division=0)),
+        "F1": float(f1_score(y_test_bin, y_test_pred, zero_division=0)),
+        "ROC-AUC": float(roc_auc_score(y_test_bin, y_test_prob)),
+        "ConfusionMatrix": confusion_matrix(y_test_bin, y_test_pred).tolist()
+    }
+    print(f"📊 Final Held-Out Test Evaluation ({best_bin_name}): Acc: {final_test_metrics['Accuracy']:.4f} | Prec: {final_test_metrics['Precision']:.4f} | Rec: {final_test_metrics['Recall']:.4f} | F1: {final_test_metrics['F1']:.4f} | ROC-AUC: {final_test_metrics['ROC-AUC']:.4f}")
+
 
     # ---------------------------------------------------------------------------
     # Model 2: Supervised Multi-Class Diagnostic Classifier (Validation Set Evaluation)
@@ -271,8 +284,8 @@ def train_all_models():
         "total_records": int(len(df)),
         "total_devices": int(df['Device_ID'].nunique()),
         "target": "Failure_Next_12h",
-        "validation_strategy": "Deterministic Chronological 80/20 Split Per Device (max(train_ts) < min(test_ts))",
-        "model_version": "2.0.0",
+        "validation_strategy": "Deterministic Chronological 60/20/20 Split Per Device (Train / Validation / Held-Out Test)",
+        "model_version": "3.0.0",
         "selected_binary_model": best_bin_name,
         "feature_schema": {
             "categorical_features": CATEGORICAL_FEATURES,
@@ -281,7 +294,9 @@ def train_all_models():
             "excluded_columns": EXCLUDE_COLUMNS
         },
         "diagnostic_classes": diag_classes,
-        "binary_classifier_metrics": bin_results[best_bin_name],
+        "binary_classifier_validation_metrics": bin_val_results[best_bin_name],
+        "binary_classifier_test_metrics": final_test_metrics,
+
         "diagnostic_classifier_metrics": {
             "sample_filter": "Failed == 1 records (chronologically evaluated on validation split)",
             "accuracy": float(diag_acc),

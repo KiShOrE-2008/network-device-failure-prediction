@@ -28,6 +28,14 @@ FEATURE_COLUMNS = CATEGORICAL_FEATURES + NUMERICAL_FEATURES
 # Diagnostic Feature Schema (used by root cause multi-class classifier)
 DIAGNOSTIC_FEATURE_COLUMNS = FEATURE_COLUMNS.copy()
 
+# Anomaly Feature Schema (used by unsupervised Isolation Forest pipeline)
+ANOMALY_FEATURE_COLUMNS = [
+    "CPU_Usage", "Memory_Usage", "Temperature", "Interface_Errors",
+    "Packet_Loss", "Bandwidth_Usage", "Log_Errors", "CPU_Trend",
+    "Memory_Trend", "Temperature_Trend", "Error_Trend", "PacketLoss_Trend",
+    "CPU_Spike", "Temperature_Spike", "Error_Spike"
+]
+
 # Metadata & Identifiers
 METADATA_COLUMNS = [
     'Device_ID', 'Hostname', 'IP_Address', 'Device_Type', 'Vendor',
@@ -76,12 +84,12 @@ def compute_rolling_features(df: pd.DataFrame) -> pd.DataFrame:
             df[trend_col] = grouped[col].transform(lambda x: x.diff(1)).fillna(0.0)
 
     # Spike indicators calculated against past rolling average and trend
-    cpu_usage = df['CPU_Usage'] if 'CPU_Usage' in df.columns else 0
-    cpu_trend = df['CPU_Trend'] if 'CPU_Trend' in df.columns else 0
-    temp_usage = df['Temperature'] if 'Temperature' in df.columns else 0
-    temp_trend = df['Temperature_Trend'] if 'Temperature_Trend' in df.columns else 0
-    err_usage = df['Interface_Errors'] if 'Interface_Errors' in df.columns else 0
-    err_trend = df['Error_Trend'] if 'Error_Trend' in df.columns else 0
+    cpu_usage = df['CPU_Usage'] if 'CPU_Usage' in df.columns else pd.Series(0, index=df.index)
+    cpu_trend = df['CPU_Trend'] if 'CPU_Trend' in df.columns else pd.Series(0, index=df.index)
+    temp_usage = df['Temperature'] if 'Temperature' in df.columns else pd.Series(0, index=df.index)
+    temp_trend = df['Temperature_Trend'] if 'Temperature_Trend' in df.columns else pd.Series(0, index=df.index)
+    err_usage = df['Interface_Errors'] if 'Interface_Errors' in df.columns else pd.Series(0, index=df.index)
+    err_trend = df['Error_Trend'] if 'Error_Trend' in df.columns else pd.Series(0, index=df.index)
 
     df['CPU_Spike'] = ((cpu_usage > 85) & (cpu_trend > 15)).astype(int)
     df['Temperature_Spike'] = ((temp_usage > 75) & (temp_trend > 5)).astype(int)

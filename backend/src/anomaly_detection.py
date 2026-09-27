@@ -14,23 +14,10 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
-FEATURE_COLS = [
-    "CPU_Usage",
-    "Memory_Usage",
-    "Temperature",
-    "Interface_Errors",
-    "Packet_Loss",
-    "Bandwidth_Usage",
-    "Log_Errors",
-    "CPU_Trend",
-    "Memory_Trend",
-    "Temperature_Trend",
-    "Error_Trend",
-    "PacketLoss_Trend",
-    "CPU_Spike",
-    "Temperature_Spike",
-    "Error_Spike"
-]
+from feature_engineering import ANOMALY_FEATURE_COLUMNS
+
+# Alias for backward compatibility if imported elsewhere
+FEATURE_COLS = ANOMALY_FEATURE_COLUMNS
 
 DEFAULT_BASELINE_STATS = {
     "CPU_Usage": {"mean": 30.0, "std": 15.0},
@@ -50,19 +37,20 @@ DEFAULT_BASELINE_STATS = {
     "Error_Spike": {"mean": 0.0, "std": 0.2}
 }
 
+
 def train_anomaly_model(df: pd.DataFrame, model_path="models/anomaly_model.pkl"):
     """
-    Trains an IsolationForest model on normal baseline telemetry data.
+    Trains an IsolationForest model on normal baseline telemetry data using ANOMALY_FEATURE_COLUMNS pipeline.
     """
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
-    train_df = df[df["Failed"] == 0] if "Failed" in df.columns else df
-    
-    for col in FEATURE_COLS:
+    train_df = df[df["Failed"] == 0].copy() if "Failed" in df.columns else df.copy()
+
+    for col in ANOMALY_FEATURE_COLUMNS:
         if col not in train_df.columns:
             train_df[col] = 0.0
-            
-    X_train = train_df[FEATURE_COLS]
-    
+
+    X_train = train_df[ANOMALY_FEATURE_COLUMNS].fillna(0.0)
+
     pipeline = Pipeline([
         ("scaler", StandardScaler()),
         ("iso_forest", IsolationForest(
@@ -72,45 +60,47 @@ def train_anomaly_model(df: pd.DataFrame, model_path="models/anomaly_model.pkl")
             n_jobs=-1
         ))
     ])
-    
+
     pipeline.fit(X_train)
     joblib.dump(pipeline, model_path)
-    print(f"✅ Isolation Forest anomaly model trained and saved to {model_path}")
+    print(f"✅ Isolation Forest anomaly model pipeline trained and saved to {model_path}")
     return pipeline
+
 
 def predict_anomaly(telemetry: dict, model=None, model_path="models/anomaly_model.pkl") -> dict:
     """
     Evaluates telemetry against Isolation Forest anomaly detector.
     Returns uncalibrated Anomaly Index (0-100%), boolean flag, and anomalous feature highlights.
-    Note: Anomaly Index represents statistical deviation from normal baseline, NOT failure probability.
+    Uses ANOMALY_FEATURE_COLUMNS and passes input through the saved Pipeline (StandardScaler + IsolationForest).
     """
     if model is None and os.path.exists(model_path):
         try:
             model = joblib.load(model_path)
         except Exception as e:
             print(f"⚠️ Could not load anomaly model: {e}")
-                
+
     input_row = {}
-    for col in FEATURE_COLS:
+    for col in ANOMALY_FEATURE_COLUMNS:
         input_row[col] = float(telemetry.get(col, 0.0))
-        
+
     df_input = pd.DataFrame([input_row])
-    
+
     if model is not None:
         try:
             raw_score = model.score_samples(df_input)[0]
-            anomaly_pct = float(np.clip((0.15 - raw_score) / 0.55 * 100.0, 0.0, 100.0))
+            # IsolationForest score_samples: ~ -0.35 for normal, ~ -0.75 for anomaly
+            anomaly_pct = float(np.clip((-0.35 - raw_score) / 0.40 * 100.0, 0.0, 100.0))
         except Exception:
             anomaly_pct = _heuristic_anomaly_score(input_row)
     else:
         anomaly_pct = _heuristic_anomaly_score(input_row)
-        
+
     anomaly_pct = round(anomaly_pct, 1)
     is_anomaly = anomaly_pct > 65.0
-    
+
     anomalous_features = []
     for col in ["CPU_Usage", "Memory_Usage", "Temperature", "Interface_Errors", "Packet_Loss", "CPU_Trend", "Temperature_Trend"]:
-        val = input_row[col]
+        val = input_row.get(col, 0.0)
         stats = DEFAULT_BASELINE_STATS.get(col, {"mean": 0, "std": 1})
         z_score = (val - stats["mean"]) / max(stats["std"], 0.001)
         if z_score > 2.2:
@@ -119,19 +109,54 @@ def predict_anomaly(telemetry: dict, model=None, model_path="models/anomaly_mode
                 "raw_value": val,
                 "deviation": f"+{z_score:.1f}σ above normal baseline"
             })
-            
+
     return {
         "anomaly_score": anomaly_pct,
         "is_anomaly": is_anomaly,
         "anomalous_features": sorted(anomalous_features, key=lambda x: x["raw_value"], reverse=True)[:3]
     }
 
+
+def predict_anomaly_batch(df: pd.DataFrame, model=None, model_path="models/anomaly_model.pkl") -> list[float]:
+    """
+    Evaluates batch DataFrame telemetry against Isolation Forest anomaly pipeline.
+    Uses full ANOMALY_FEATURE_COLUMNS schema and returns normalized anomaly scores (0-100%).
+    """
+    if model is None and os.path.exists(model_path):
+        try:
+            model = joblib.load(model_path)
+        except Exception as e:
+            print(f"⚠️ Could not load anomaly model: {e}")
+
+    X_batch = df.copy()
+    for col in ANOMALY_FEATURE_COLUMNS:
+        if col not in X_batch.columns:
+            X_batch[col] = 0.0
+    X_batch = X_batch[ANOMALY_FEATURE_COLUMNS].fillna(0.0)
+
+    if model is not None:
+        try:
+            raw_scores = model.score_samples(X_batch)
+            scores = [round(float(np.clip((-0.35 - s) / 0.40 * 100.0, 0.0, 100.0)), 1) for s in raw_scores]
+            return scores
+
+        except Exception as e:
+            print(f"⚠️ Error during batch anomaly prediction: {e}")
+
+    # Fallback heuristic scores for batch if model unavailable
+    scores = []
+    for _, row in df.iterrows():
+        scores.append(round(_heuristic_anomaly_score(row.to_dict()), 1))
+    return scores
+
+
 def _heuristic_anomaly_score(telemetry: dict) -> float:
     """Fallback score calculation if IsolationForest model file is unavailable."""
     score = 0.0
     if float(telemetry.get("CPU_Usage", 0)) > 85: score += 25
     if float(telemetry.get("CPU_Trend", 0)) > 20: score += 20
-    if float(telemetry.get("Temperature", 0)) > 75: score += 25  # Fixed typo: Temperature instead of Temperature_Usage
+    if float(telemetry.get("Temperature", 0)) > 75: score += 25
     if float(telemetry.get("Temperature_Trend", 0)) > 10: score += 20
     if float(telemetry.get("Interface_Errors", 0)) > 50: score += 20
     return min(100.0, score)
+
