@@ -34,12 +34,14 @@ from api.devices import devices_bp
 from api.alerts import alerts_bp
 from api.topology import topology_bp
 from api.discovery import discovery_bp
+from api.advanced_intelligence import advanced_bp
 
 app.register_blueprint(fleet_bp)
 app.register_blueprint(devices_bp)
 app.register_blueprint(alerts_bp)
 app.register_blueprint(topology_bp)
 app.register_blueprint(discovery_bp)
+app.register_blueprint(advanced_bp)
 
 history_store.init_db()
 history_store.seed_devices_from_dataset()
@@ -219,6 +221,10 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
 @app.route('/')
 def index():
     return send_from_directory(FRONTEND_DIR, 'index.html')
+
+@app.route('/advanced')
+def advanced_intelligence_center():
+    return send_from_directory(FRONTEND_DIR, 'advanced.html')
 
 
 @app.route('/api/v1/health', methods=['GET'])
