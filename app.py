@@ -17,8 +17,15 @@ def main():
     backend_app = os.path.join(backend_dir, "app.py")
     cmd = [python_bin, backend_app] + sys.argv[1:]
     
+    env = os.environ.copy()
+    env.setdefault("OMP_NUM_THREADS", "2")
+    env.setdefault("OPENBLAS_NUM_THREADS", "2")
+    env.setdefault("MKL_NUM_THREADS", "2")
+    env.setdefault("VECLIB_MAXIMUM_THREADS", "2")
+    env.setdefault("NUMEXPR_NUM_THREADS", "2")
+
     try:
-        subprocess.run(cmd, cwd=backend_dir)
+        subprocess.run(cmd, cwd=backend_dir, env=env)
     except KeyboardInterrupt:
         print("\n🛑 Execution stopped by user.")
 

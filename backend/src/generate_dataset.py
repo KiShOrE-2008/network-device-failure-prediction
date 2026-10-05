@@ -220,12 +220,15 @@ def generate_network_telemetry(num_devices=500, steps_per_device=100):
     from target_engineering import compute_failure_next_12h_target
     df = compute_failure_next_12h_target(df, horizon=12)
     
-    timeseries_path = "data/network_devices_timeseries.csv"
-    main_path = "data/network_devices.csv"
-    
-    os.makedirs("data/netguard_noc_dataset_v1", exist_ok=True)
-    v1_ts_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
-    v1_main_path = "data/netguard_noc_dataset_v1/network_devices.csv"
+    backend_root = os.path.dirname(BASE_DIR)
+    data_dir = os.path.join(backend_root, "data")
+    v1_dir = os.path.join(data_dir, "netguard_noc_dataset_v1")
+    os.makedirs(v1_dir, exist_ok=True)
+
+    timeseries_path = os.path.join(data_dir, "network_devices_timeseries.csv")
+    main_path = os.path.join(data_dir, "network_devices.csv")
+    v1_ts_path = os.path.join(v1_dir, "network_devices_timeseries.csv")
+    v1_main_path = os.path.join(v1_dir, "network_devices.csv")
 
     df.to_csv(timeseries_path, index=False)
     df.to_csv(v1_ts_path, index=False)

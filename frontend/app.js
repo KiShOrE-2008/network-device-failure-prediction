@@ -67,6 +67,9 @@ function switchView(viewId) {
     case 'anomalies':
       loadAnomaliesData();
       break;
+    case 'diagnostics':
+      loadDiagnosticsData();
+      break;
     case 'analytics':
       loadAnalyticsData();
       break;
@@ -657,7 +660,7 @@ function closeCommandPalette() {
 }
 
 function handleCmdSearch() {
-  const q = document.getElementById('cmd-input').value.toLowerCase();
+  const q = document.getElementById('cmd-input').value.toLowerCase().trim();
   const container = document.getElementById('cmd-results');
   if (!container) return;
 
@@ -668,5 +671,280 @@ function handleCmdSearch() {
         <span class="kbd-badge">Inspect</span>
       </div>
     `;
+  } else if (q.includes('diag') || q.includes('what') || q.includes('sim')) {
+    container.innerHTML = `
+      <div class="cmd-item" onclick="switchView('diagnostics'); closeCommandPalette();">
+        <span>⚡ Device Diagnostics & What-If Simulator</span>
+        <span class="kbd-badge">View</span>
+      </div>
+    `;
   }
 }
+
+// -----------------------------------------------------------------------------
+// Diagnostics & What-If Simulator Controller
+// -----------------------------------------------------------------------------
+let whatifActive = false;
+let whatifDebounceTimer = null;
+let baselineDiagnosticResult = null;
+
+function loadDiagnosticsData() {
+  if (!baselineDiagnosticResult) {
+    runDiagnosticsInference();
+  }
+}
+
+function updateSliderVal(metric, val, unit) {
+  const el = document.getElementById(`val-${metric}`);
+  if (el) el.innerText = `${val}${unit}`;
+  onSliderChange();
+}
+
+function onSliderChange() {
+  if (whatifActive) {
+    clearTimeout(whatifDebounceTimer);
+    whatifDebounceTimer = setTimeout(runWhatIfInference, 200);
+  }
+}
+
+function toggleWhatIfMode() {
+  whatifActive = !whatifActive;
+  const btn = document.getElementById('whatif-toggle-btn');
+  const panel = document.getElementById('whatif-panel');
+
+  if (btn) {
+    btn.classList.toggle('active', whatifActive);
+    btn.innerHTML = whatifActive
+      ? '<span class="icon">✕</span> Exit Simulator'
+      : '<span class="icon">🧪</span> What-If Simulator';
+    btn.style.background = whatifActive ? 'rgba(56, 189, 248, 0.2)' : '';
+    btn.style.borderColor = whatifActive ? 'var(--accent-cyan)' : '';
+    btn.style.color = whatifActive ? 'var(--accent-cyan)' : '';
+  }
+
+  if (panel) {
+    panel.style.display = whatifActive ? 'block' : 'none';
+  }
+
+  if (whatifActive) {
+    runWhatIfInference();
+  }
+}
+
+function getDiagnosticsPayload() {
+  const typeEl = document.querySelector('input[name="Device_Type"]:checked');
+  return {
+    Device_Type: typeEl ? typeEl.value : 'Router',
+    CPU_Usage: parseFloat(document.getElementById('cpu_usage')?.value || 92),
+    Memory_Usage: parseFloat(document.getElementById('memory_usage')?.value || 94),
+    Temperature: parseFloat(document.getElementById('temperature')?.value || 78),
+    Interface_Errors: parseInt(document.getElementById('interface_errors')?.value || 156),
+    Packet_Loss: parseFloat(document.getElementById('packet_loss')?.value || 8.2),
+    Bandwidth_Usage: parseFloat(document.getElementById('bandwidth_usage')?.value || 95),
+    Uptime: parseFloat(document.getElementById('uptime')?.value || 20),
+    Log_Errors: parseInt(document.getElementById('log_errors')?.value || 20)
+  };
+}
+
+async function runDiagnosticsInference() {
+  const payload = getDiagnosticsPayload();
+  const btn = document.getElementById('btn-run-diag');
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span>⚡ Running Diagnostics...</span>';
+  }
+
+  try {
+    const res = await fetch('/api/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    baselineDiagnosticResult = data;
+    updateUIWithResults(data);
+  } catch (err) {
+    console.error('Failed to run diagnostics inference:', err);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = '<span>⚡ Run Live Diagnostics</span>';
+    }
+  }
+}
+
+async function runWhatIfInference() {
+  const payload = getDiagnosticsPayload();
+  try {
+    const res = await fetch('/api/whatif', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    renderWhatIfPanel(data);
+  } catch (err) {
+    console.error('Failed what-if simulation:', err);
+  }
+}
+
+function updateUIWithResults(data) {
+  // Update Health Score Arc & Text
+  const score = data.health_score ?? 100;
+  const arc = document.getElementById('health-score-arc');
+  const val = document.getElementById('health-score-value');
+  const label = document.getElementById('health-score-label');
+
+  if (val) val.innerText = score.toFixed(1);
+  if (arc) {
+    const circumference = 282.7;
+    const fraction = Math.max(0, Math.min(score / 100, 1));
+    arc.style.strokeDashoffset = circumference * (1 - fraction);
+    const color = score >= 70 ? 'var(--color-low)' : score >= 40 ? 'var(--color-medium)' : 'var(--color-critical)';
+    arc.style.stroke = color;
+    if (val) val.style.color = color;
+    if (label) {
+      label.innerText = score >= 70 ? 'HEALTHY' : score >= 40 ? 'DEGRADED' : 'CRITICAL';
+      label.style.color = color;
+    }
+  }
+
+  // Diagnosed Failure Type
+  const failType = document.getElementById('failure-type-display');
+  if (failType) {
+    failType.innerText = data.predicted_failure || data.failure_type || 'NONE';
+    failType.style.color = (data.predicted_failure && data.predicted_failure !== 'NONE') ? 'var(--color-critical)' : 'var(--color-low)';
+  }
+
+  // Narrative
+  const narr = document.getElementById('failure-desc-display');
+  if (narr) {
+    narr.innerText = data.diagnosis_narrative || data.description || 'Nominal operational status.';
+  }
+
+  // Anomaly score & flag
+  const anomVal = document.getElementById('anomaly-score-val');
+  const anomBadge = document.getElementById('anomaly-flag-badge');
+  if (anomVal) anomVal.innerText = `${(data.anomaly_score ?? 0).toFixed(1)}%`;
+  if (anomBadge) {
+    if (data.is_anomaly) {
+      anomBadge.innerText = 'ANOMALY DETECTED';
+      anomBadge.style.background = 'rgba(239, 68, 68, 0.2)';
+      anomBadge.style.color = 'var(--color-critical)';
+    } else {
+      anomBadge.innerText = 'NORMAL';
+      anomBadge.style.background = 'rgba(34, 197, 94, 0.15)';
+      anomBadge.style.color = 'var(--color-low)';
+    }
+  }
+
+  // Risk Window
+  const winEl = document.getElementById('risk-window-text');
+  if (winEl) winEl.innerText = data.risk_window || 'Immediate / Normal';
+
+  // SHAP Attributions
+  renderShapBars(data.shap_causes || data.top_contributing_causes || []);
+
+  // Recommended Actions
+  renderRecommendedRunbook(data.recommended_actions || []);
+}
+
+function renderShapBars(causes) {
+  const container = document.getElementById('shap-bars-container');
+  if (!container) return;
+  if (!causes || causes.length === 0) {
+    container.innerHTML = '<p class="mono-text" style="font-size:12px; color:var(--text-muted);">No significant risk drivers identified.</p>';
+    return;
+  }
+
+  const maxAbs = Math.max(...causes.map(c => Math.abs(c.contribution)), 0.001);
+  container.innerHTML = causes.map(c => {
+    const isRisk = c.direction !== 'decreases_risk';
+    const barColor = isRisk ? 'var(--color-critical)' : 'var(--color-low)';
+    const pct = Math.round((Math.abs(c.contribution) / maxAbs) * 100);
+    const dirIcon = isRisk ? '↑' : '↓';
+    return `
+      <div class="shap-row">
+        <div class="shap-label">
+          <span class="shap-dir" style="color:${barColor}; font-weight:700;">${dirIcon}</span>
+          <span>${c.feature}</span>
+        </div>
+        <div class="shap-bar-track">
+          <div class="shap-bar-fill" style="width:${pct}%; background:${barColor};"></div>
+        </div>
+        <span class="shap-pct mono-text" style="color:${barColor};">${Math.abs(c.contribution).toFixed(3)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function renderRecommendedRunbook(actions) {
+  const list = document.getElementById('intel-actions-list');
+  if (!list) return;
+  if (!actions || actions.length === 0) {
+    list.innerHTML = '<li>Device operating within nominal limits. Standard monitoring advised.</li>';
+    return;
+  }
+  list.innerHTML = actions.map(act => `<li>${act}</li>`).join('');
+}
+
+function renderWhatIfPanel(whatifData) {
+  const panel = document.getElementById('whatif-panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+
+  const prob = (whatifData.probability != null ? whatifData.probability : (whatifData.failure_probability || 0)) * 100;
+  const health = whatifData.health_score ?? 100;
+
+  const probEl = document.getElementById('wi-prob-val');
+  const healthEl = document.getElementById('wi-health-val');
+  const riskEl = document.getElementById('wi-risk-val');
+  const winEl = document.getElementById('wi-window-val');
+
+  if (probEl) {
+    probEl.innerText = `${prob.toFixed(1)}%`;
+    probEl.style.color = (whatifData.risk === 'CRITICAL' || whatifData.risk === 'HIGH') ? 'var(--color-critical)' : whatifData.risk === 'MEDIUM' ? 'var(--color-medium)' : 'var(--color-low)';
+  }
+  if (healthEl) {
+    healthEl.innerText = health.toFixed(1);
+    healthEl.style.color = health >= 70 ? 'var(--color-low)' : health >= 40 ? 'var(--color-medium)' : 'var(--color-critical)';
+  }
+  if (riskEl) {
+    riskEl.innerText = `${whatifData.risk || 'LOW'} RISK`;
+  }
+  if (winEl) {
+    winEl.innerText = whatifData.risk_window || 'Immediate';
+  }
+
+  // Deltas
+  if (baselineDiagnosticResult) {
+    const baseProb = (baselineDiagnosticResult.probability != null ? baselineDiagnosticResult.probability : (baselineDiagnosticResult.failure_probability || 0)) * 100;
+    const baseHealth = baselineDiagnosticResult.health_score ?? 100;
+
+    const deltaP = prob - baseProb;
+    const deltaH = health - baseHealth;
+
+    const dpEl = document.getElementById('wi-delta-prob');
+    const dhEl = document.getElementById('wi-delta-health');
+
+    if (dpEl) {
+      dpEl.innerText = `${deltaP > 0 ? '+' : ''}${deltaP.toFixed(1)}%`;
+      dpEl.className = `wi-delta ${deltaP > 0 ? 'delta-bad' : 'delta-good'}`;
+    }
+    if (dhEl) {
+      dhEl.innerText = `${deltaH > 0 ? '+' : ''}${deltaH.toFixed(1)}`;
+      dhEl.className = `wi-delta ${deltaH < 0 ? 'delta-bad' : 'delta-good'}`;
+    }
+  }
+
+  // Also update right column details in real-time
+  updateUIWithResults(whatifData);
+}
+
+window.updateUIWithResults = updateUIWithResults;
+window.renderWhatIfPanel = renderWhatIfPanel;
+window.toggleWhatIfMode = toggleWhatIfMode;
+window.runDiagnosticsInference = runDiagnosticsInference;
+window.updateSliderVal = updateSliderVal;
+window.onSliderChange = onSliderChange;
+

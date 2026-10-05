@@ -1,13 +1,13 @@
 {
-  "training_timestamp": "2026-09-27T00:41:18.587814",
+  "training_timestamp": "2026-10-05T20:54:11.573717",
   "dataset_name": "netguard_noc_dataset_v1",
   "dataset_version": "v2.0",
-  "total_records": 50000,
-  "total_devices": 500,
+  "total_records": 200,
+  "total_devices": 2,
   "target": "Failure_Next_12h",
   "validation_strategy": "Deterministic Chronological 60/20/20 Split Per Device (Train / Validation / Held-Out Test)",
   "model_version": "3.0.0",
-  "selected_binary_model": "XGBoost",
+  "selected_binary_model": "Logistic Regression",
   "feature_schema": {
     "categorical_features": [
       "Device_Type"
@@ -70,43 +70,39 @@
     ]
   },
   "diagnostic_classes": [
-    "CONGESTION",
-    "HARDWARE",
-    "INTERFACE",
-    "MEMORY",
-    "THERMAL"
+    "NONE"
   ],
   "binary_classifier_validation_metrics": {
-    "Accuracy": 0.98475,
-    "Precision": 0.9621559633027523,
-    "Recall": 0.9677047289504037,
-    "F1": 0.9649223691776884,
-    "ROC-AUC": 0.9979475840579374,
+    "Accuracy": 0.375,
+    "Precision": 0.0,
+    "Recall": 0.0,
+    "F1": 0.0,
+    "ROC-AUC": NaN,
     "ConfusionMatrix": [
       [
-        3100,
-        33
+        6,
+        10
       ],
       [
-        28,
-        839
+        0,
+        0
       ]
     ]
   },
   "binary_classifier_test_metrics": {
-    "Accuracy": 0.9995,
-    "Precision": 1.0,
-    "Recall": 0.9985029940119761,
-    "F1": 0.9992509363295881,
-    "ROC-AUC": 0.9999988761216306,
+    "Accuracy": 0.3125,
+    "Precision": 0.0,
+    "Recall": 0.0,
+    "F1": 0.0,
+    "ROC-AUC": 0.35,
     "ConfusionMatrix": [
       [
-        2664,
-        0
+        5,
+        1
       ],
       [
-        2,
-        1334
+        10,
+        0
       ]
     ]
   },
@@ -116,43 +112,7 @@
     "precision": 1.0,
     "recall": 1.0,
     "weighted_f1": 1.0,
-    "confusion_matrix": [
-      [
-        177,
-        0,
-        0,
-        0,
-        0
-      ],
-      [
-        0,
-        196,
-        0,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        214,
-        0,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        239,
-        0
-      ],
-      [
-        0,
-        0,
-        0,
-        0,
-        230
-      ]
-    ]
+    "confusion_matrix": []
   },
   "anomaly_detector": {
     "model_type": "Isolation Forest (150 estimators)",

@@ -8,7 +8,16 @@ and provides utility endpoints for manual inference, what-if simulations, and pl
 
 import os
 import sys
+
+# Prevent OpenMP / BLAS / XGBoost thread flooding
+os.environ.setdefault("OMP_NUM_THREADS", "2")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "2")
+os.environ.setdefault("MKL_NUM_THREADS", "2")
+os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "2")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "2")
+
 import pandas as pd
+import numpy as np
 import joblib
 from flask import Flask, jsonify, request, send_from_directory
 
@@ -191,15 +200,29 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
         anomaly_score=anomaly_score
     )
 
+    narratives = {
+        "THERMAL": "Elevated chassis thermal sensors indicate cooling degradation or ventilation fault.",
+        "MEMORY": "Memory utilization critical or severe memory exhaustion trend detected.",
+        "INTERFACE": "High interface error rate or CRC packet loss detected on physical links.",
+        "CONGESTION": "Traffic saturation and queue buffer drops exceeding operational thresholds.",
+        "HARDWARE": "Hardware subsystem fault, PCIe alert, or sensor deviation detected.",
+        "NONE": "Telemetry operating within nominal thresholds. No failure signatures observed."
+    }
+    diagnosis_narrative = diag_info.get("description", diag_info.get("narrative", narratives.get(diag_info["failure_type"], "Nominal operational status.")))
+
     result = {
+        "success":                 True,
         "prediction_available":     prediction_available,
         "model_status":             model_status,
+        "probability":             round(effective_prob, 4),
         "failure_probability":     round(proba, 4) if proba is not None else None,
         "failure_probability_pct": round(proba * 100, 1) if proba is not None else None,
         "heuristic_risk_score":     round(heuristic_risk, 1),
         "risk":                    risk_level,
         "risk_window":             health_engine.risk_window_from_probability(effective_prob),
         "predicted_failure":       diag_info["failure_type"],
+        "failure_type":            diag_info["failure_type"],
+        "diagnosis_narrative":     diagnosis_narrative,
         "diagnostic_confidence":   diag_info["diagnostic_confidence"],
         "anomaly_score":           anomaly_score,
         "is_anomaly":              is_anomaly,
@@ -207,6 +230,7 @@ def _run_inference(telemetry: dict, log_to_history: bool = True, device_id: str 
         "model_name":              get_active_model_name() if prediction_available else "UNAVAILABLE",
         "recommended_actions":     diag_info["recommended_actions"],
         "top_contributing_causes": shap_causes,
+        "shap_causes":             shap_causes,
         "health_report":           report,
         "syslog_summary":          log_info
     }
@@ -295,5 +319,7 @@ def serve_plot(filename):
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_DEBUG', '0').lower() in ('1', 'true', 'yes')
     print(f"🚀 Launching NetGuard NOC web server on http://localhost:{port}...")
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # use_reloader=False prevents heavy I/O stat loops over FUSE / NTFS filesystems
+    app.run(host='0.0.0.0', port=port, debug=debug_mode, use_reloader=False, threaded=True)

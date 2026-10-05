@@ -93,3 +93,49 @@ def analyze_syslog_stream(logs: List[str]) -> Dict[str, Any]:
         "category_counts": categories,
         "parsed_logs": parsed
     }
+
+
+class SyslogCollector:
+    """Manages telemetry-driven syslog message ingestion and structured summaries."""
+
+    def __init__(self):
+        self.history = []
+
+    def ingest_and_summarize(self, telemetry: Dict[str, Any], failure_probability: float = 0.0) -> Dict[str, Any]:
+        """
+        Synthesizes and summarizes syslog records based on live device telemetry metrics.
+        """
+        logs = []
+        cpu = float(telemetry.get("CPU_Usage", 0))
+        temp = float(telemetry.get("Temperature", 0))
+        mem = float(telemetry.get("Memory_Usage", 0))
+        errors = int(telemetry.get("Interface_Errors", 0))
+        pkt_loss = float(telemetry.get("Packet_Loss", 0))
+        syslog_crit = int(telemetry.get("Syslog_Critical_Count", 0))
+
+        if temp > 80:
+            logs.append("%SYS-2-THERMAL_CRITICAL: Chassis temperature threshold exceeded 80C")
+        elif temp > 70:
+            logs.append("%SYS-4-TEMP_WARNING: Temperature rising above nominal baseline")
+
+        if cpu > 85:
+            logs.append("%SYS-3-CPU_HIGH: CPU utilization exceeded 85% threshold")
+        if mem > 85:
+            logs.append("%SYS-3-MALLOC_FAIL: System memory buffer allocation under pressure")
+        if errors > 10:
+            logs.append("%LINK-3-CRC_ERRORS: Excessive CRC error count detected on interface")
+        if pkt_loss > 5:
+            logs.append("%QOS-4-PACKET_DROP: Significant packet drops reported on egress queue")
+
+        if not logs:
+            logs.append("%SYS-6-LOG_INFO: All subsystem operational health checks passed")
+
+        summary = analyze_syslog_stream(logs)
+        summary["recent_messages"] = logs
+        summary["critical_count"] = max(summary.get("critical_count", 0), syslog_crit)
+        return summary
+
+
+# Singleton instance for modular imports
+syslog_collector = SyslogCollector()
+

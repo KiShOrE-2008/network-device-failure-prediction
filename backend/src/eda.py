@@ -1,12 +1,16 @@
+import os
 import pandas as pd
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
-import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_ROOT = os.path.dirname(BASE_DIR)
+DATA_PATH = os.path.join(BACKEND_ROOT, "data", "network_devices.csv")
+OUTPUTS_DIR = os.path.join(BACKEND_ROOT, "outputs")
 
 # Load dataset
-df = pd.read_csv("data/network_devices.csv")
+df = pd.read_csv(DATA_PATH)
 
 print("\nDataset Shape:")
 print(df.shape)
@@ -24,7 +28,7 @@ print("\nFailure Distribution:")
 print(df["Failed"].value_counts())
 
 # Create output folder
-os.makedirs("outputs", exist_ok=True)
+os.makedirs(OUTPUTS_DIR, exist_ok=True)
 
 # -----------------------------
 # 1. Failure Distribution
@@ -41,7 +45,7 @@ plt.xlabel("Failure Status")
 plt.ylabel("Number of Devices")
 
 plt.savefig(
-    "outputs/failure_distribution.png",
+    os.path.join(OUTPUTS_DIR, "failure_distribution.png"),
     dpi=300,
     bbox_inches="tight"
 )
@@ -64,7 +68,7 @@ plt.xlabel("Failure Status")
 plt.ylabel("CPU Usage (%)")
 
 plt.savefig(
-    "outputs/cpu_vs_failure.png",
+    os.path.join(OUTPUTS_DIR, "cpu_vs_failure.png"),
     dpi=300,
     bbox_inches="tight"
 )
@@ -87,7 +91,7 @@ plt.xlabel("Failure Status")
 plt.ylabel("Memory Usage (%)")
 
 plt.savefig(
-    "outputs/memory_vs_failure.png",
+    os.path.join(OUTPUTS_DIR, "memory_vs_failure.png"),
     dpi=300,
     bbox_inches="tight"
 )
@@ -110,7 +114,7 @@ plt.xlabel("Failure Status")
 plt.ylabel("Temperature (°C)")
 
 plt.savefig(
-    "outputs/temperature_vs_failure.png",
+    os.path.join(OUTPUTS_DIR, "temperature_vs_failure.png"),
     dpi=300,
     bbox_inches="tight"
 )
@@ -140,7 +144,7 @@ plt.title(
 )
 
 plt.savefig(
-    "outputs/correlation_heatmap.png",
+    os.path.join(OUTPUTS_DIR, "correlation_heatmap.png"),
     dpi=300,
     bbox_inches="tight"
 )
@@ -148,4 +152,4 @@ plt.savefig(
 plt.close()
 
 print("\nEDA completed successfully!")
-print("Graphs saved in outputs/ folder.")
+print(f"Graphs saved in {OUTPUTS_DIR} folder.")

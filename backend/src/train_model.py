@@ -19,6 +19,8 @@ import numpy as np
 from datetime import datetime
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_ROOT = os.path.dirname(BASE_DIR)
+WORKSPACE_ROOT = os.path.dirname(BACKEND_ROOT)
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
@@ -79,14 +81,23 @@ def temporal_split_per_device(df: pd.DataFrame, train_ratio: float = 0.8):
     return train_df, test_df
 
 
-def train_all_models():
+def train_all_models(data_path: str = None, output_dir: str = None):
     print("=" * 60)
     print("NetGuard NOC — Fleet ML Training Pipeline (Temporal Validation)")
     print("=" * 60)
 
-    csv_path = "data/netguard_noc_dataset_v1/network_devices_timeseries.csv"
-    if not os.path.exists(csv_path):
-        csv_path = "data/network_devices_timeseries.csv"
+    if data_path and os.path.exists(data_path):
+        csv_path = data_path
+    else:
+        candidates = [
+            os.path.join(BACKEND_ROOT, "data", "netguard_noc_dataset_v1", "network_devices_timeseries.csv"),
+            os.path.join(BACKEND_ROOT, "data", "network_devices_timeseries.csv"),
+            os.path.join(WORKSPACE_ROOT, "data", "netguard_noc_dataset_v1", "network_devices_timeseries.csv"),
+            os.path.join(WORKSPACE_ROOT, "data", "network_devices_timeseries.csv"),
+            "data/netguard_noc_dataset_v1/network_devices_timeseries.csv",
+            "data/network_devices_timeseries.csv"
+        ]
+        csv_path = next((c for c in candidates if os.path.exists(c)), "data/network_devices_timeseries.csv")
         
     print(f"Loading benchmark dataset from: {csv_path}")
     df = pd.read_csv(csv_path)
@@ -266,16 +277,21 @@ def train_all_models():
     print("3. Training Isolation Forest Anomaly Detector")
     print("-" * 50)
 
-    anomaly_model = anomaly_detection.train_anomaly_model(df, model_path="models/anomaly_model.pkl")
+    models_dir = output_dir if output_dir else os.path.join(BACKEND_ROOT, "models")
+    os.makedirs(models_dir, exist_ok=True)
+    outputs_dir = os.path.join(BACKEND_ROOT, "outputs", "reports")
+    os.makedirs(outputs_dir, exist_ok=True)
+
+    anomaly_model_path = os.path.join(models_dir, "anomaly_model.pkl")
+    anomaly_model = anomaly_detection.train_anomaly_model(df, model_path=anomaly_model_path)
 
     # ---------------------------------------------------------------------------
     # Save Model Artifacts & Auto-Generate Metadata (models/model_metadata.json)
     # ---------------------------------------------------------------------------
-    os.makedirs("models", exist_ok=True)
-    os.makedirs("outputs/reports", exist_ok=True)
-
-    joblib.dump(best_bin_model, "models/failure_model.pkl")
-    joblib.dump(diagnostic_pipeline, "models/diagnostic_model.pkl")
+    failure_model_path = os.path.join(models_dir, "failure_model.pkl")
+    diagnostic_model_path = os.path.join(models_dir, "diagnostic_model.pkl")
+    joblib.dump(best_bin_model, failure_model_path)
+    joblib.dump(diagnostic_pipeline, diagnostic_model_path)
 
     metadata = {
         "training_timestamp": datetime.now().isoformat(),
@@ -311,20 +327,20 @@ def train_all_models():
         }
     }
 
-    metadata_path = "models/model_metadata.json"
+    metadata_path = os.path.join(models_dir, "model_metadata.json")
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    json_report_path = "outputs/reports/model_report.json"
+    json_report_path = os.path.join(outputs_dir, "model_report.json")
     with open(json_report_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
     print("\n" + "=" * 60)
     print("Model Training & Metadata Generation Complete")
     print("=" * 60)
-    print(f"✓ Binary Failure Model:      models/failure_model.pkl")
-    print(f"✓ Diagnostic Classifier:     models/diagnostic_model.pkl")
-    print(f"✓ Anomaly Detector:          models/anomaly_model.pkl")
+    print(f"✓ Binary Failure Model:      {failure_model_path}")
+    print(f"✓ Diagnostic Classifier:     {diagnostic_model_path}")
+    print(f"✓ Anomaly Detector:          {anomaly_model_path}")
     print(f"✓ Auto-Generated Metadata:   {metadata_path}")
 
 

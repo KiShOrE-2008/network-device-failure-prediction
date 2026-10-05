@@ -119,6 +119,7 @@ def get_shap_causes(telemetry: Dict[str, Any], top_n: int = 5) -> List[Dict[str,
             "Packet_Loss":            float(telemetry.get("Packet_Loss", 0)),
             "Bandwidth_Usage":        float(telemetry.get("Bandwidth_Usage", 0)),
             "Log_Errors":             int(telemetry.get("Log_Errors", 0)),
+            "Syslog_Critical_Count":  int(telemetry.get("Syslog_Critical_Count", 0)),
             "CPU_5step_avg":          float(telemetry.get("CPU_5step_avg", telemetry.get("CPU_Usage", 0))),
             "Memory_5step_avg":       float(telemetry.get("Memory_5step_avg", telemetry.get("Memory_Usage", 0))),
             "Temperature_5step_avg":  float(telemetry.get("Temperature_5step_avg", telemetry.get("Temperature", 0))),
@@ -173,3 +174,10 @@ def get_shap_causes(telemetry: Dict[str, Any], top_n: int = 5) -> List[Dict[str,
     except Exception as exc:
         logger.warning("SHAP inference failed (non-fatal): %s", exc)
         return None
+
+
+def explain_prediction(telemetry: Dict[str, Any], top_n: int = 5) -> List[Dict[str, Any]]:
+    """Generates feature attributions for a given telemetry record."""
+    causes = get_shap_causes(telemetry, top_n=top_n)
+    return causes if causes is not None else []
+

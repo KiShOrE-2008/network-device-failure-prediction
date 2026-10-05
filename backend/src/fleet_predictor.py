@@ -83,7 +83,8 @@ class FleetPredictor:
         Guarantees EXACTLY ONE prediction per unique Device_ID (using its latest observation).
         Returns predictions sorted by failure probability descending.
         """
-        if df is None:
+        is_default_fleet = (df is None)
+        if is_default_fleet:
             if FleetPredictor._cache is not None:
                 return FleetPredictor._cache
             df = self.load_fleet_data()
@@ -97,7 +98,6 @@ class FleetPredictor:
         # Batch feature matrix preparation
         X_batch = prepare_feature_matrix(latest_df, FEATURE_COLUMNS)
 
-        # Batch Model Inference
         # Batch Model Inference
         is_fallback = False
         model_status = "AVAILABLE"
@@ -117,6 +117,9 @@ class FleetPredictor:
         # Batch Anomaly Detection using single source of truth pipeline
         from anomaly_detection import predict_anomaly_batch
         anomaly_scores = predict_anomaly_batch(latest_df, model=self.anomaly_model, model_path=self.anomaly_model_path)
+
+        # Vectorized batch diagnostic predictions in a single pass
+        diag_infos = self.diagnostic_engine.diagnose_batch(latest_df, failure_probabilities=probs)
 
         predictions = []
         for idx, row in latest_df.iterrows():
@@ -145,7 +148,9 @@ class FleetPredictor:
                 risk_level = "LOW" if heuristic_risk < 30 else ("MEDIUM" if heuristic_risk < 60 else "HIGH")
 
             health_score = compute_health_score(telemetry_dict, probability=prob if prob is not None else 0.0, anomaly_score=anomaly_score)
-            diag_info = self.diagnostic_engine.diagnose(telemetry_dict, failure_probability=prob if prob is not None else 0.0)
+            diag_info = diag_infos[idx] if idx < len(diag_infos) else {
+                "failure_type": "NONE", "diagnostic_confidence": 95.0, "recommended_actions": []
+            }
 
             ts_val = row.get('Timestamp', '')
             ts_str = ts_val.isoformat() if hasattr(ts_val, 'isoformat') else str(ts_val)
@@ -194,9 +199,14 @@ class FleetPredictor:
             ),
             reverse=True
         )
-        if df is None:
+        if is_default_fleet:
             FleetPredictor._cache = predictions
         return predictions
+
+    @classmethod
+    def clear_cache(cls):
+        """Invalidates the in-memory fleet prediction cache."""
+        cls._cache = None
 
     def get_fleet_summary(self, predictions: List[Dict[str, Any]] | None = None) -> Dict[str, Any]:
         """Calculates fleet-wide health scores and risk summary metrics."""

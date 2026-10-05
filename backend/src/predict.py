@@ -10,7 +10,9 @@ if BASE_DIR not in sys.path:
 import health_engine
 import shap_explainer
 import anomaly_detection
+import numpy as np
 from intelligence import diagnostic_engine
+from feature_engineering import FEATURE_COLUMNS, DIAGNOSTIC_FEATURE_COLUMNS, prepare_feature_matrix
 
 def get_input(prompt, default, cast_func=float, validate_func=None):
     while True:
@@ -73,6 +75,14 @@ def main():
         cpu_trend = 20.0
         temp_trend = 10.0
 
+    mem_trend = 5.0
+    err_trend = 20.0
+    loss_trend = 2.0
+
+    cpu_spike = 1 if (cpu_usage > 85 and cpu_trend > 15) else 0
+    temp_spike = 1 if (temperature > 75 and temp_trend > 5) else 0
+    error_spike = 1 if (interface_errors > 20 and err_trend > 10) else 0
+
     telemetry = {
         "Device_Type": device_type,
         "CPU_Usage": cpu_usage,
@@ -83,28 +93,42 @@ def main():
         "Packet_Loss": packet_loss,
         "Bandwidth_Usage": bandwidth_usage,
         "Log_Errors": log_errors,
+        "Syslog_Critical_Count": 0,
+        "CPU_5step_avg": cpu_usage,
         "CPU_Trend": cpu_trend,
-        "Memory_Trend": 5.0,
+        "CPU_Spike": cpu_spike,
+        "Memory_5step_avg": memory_usage,
+        "Memory_Trend": mem_trend,
+        "Temperature_5step_avg": temperature,
         "Temperature_Trend": temp_trend,
-        "Error_Trend": 20.0,
-        "PacketLoss_Trend": 2.0
+        "Temperature_Spike": temp_spike,
+        "Error_5step_avg": float(interface_errors),
+        "Error_Trend": err_trend,
+        "Error_Spike": error_spike,
+        "PacketLoss_5step_avg": packet_loss,
+        "PacketLoss_Trend": loss_trend
     }
 
-    df_input = pd.DataFrame([telemetry])
+    df_input = prepare_feature_matrix(pd.DataFrame([telemetry]), FEATURE_COLUMNS)
     probability = float(model.predict_proba(df_input)[0][1])
 
     ml_type = "NONE"
     if diag_model is not None:
         try:
-            pred_idx = int(diag_model.predict(df_input)[0])
+            diag_df = prepare_feature_matrix(pd.DataFrame([telemetry]), DIAGNOSTIC_FEATURE_COLUMNS)
+            pred_idx = int(diag_model.predict(diag_df)[0])
             if hasattr(diag_model, 'label_classes_') and pred_idx < len(diag_model.label_classes_):
                 ml_type = str(diag_model.label_classes_[pred_idx])
+            elif hasattr(diag_model, 'classes_'):
+                raw_cls = diag_model.classes_[pred_idx]
+                if not isinstance(raw_cls, (int, np.integer)):
+                    ml_type = str(raw_cls)
         except Exception:
             pass
 
     diag_res = diagnostic_engine.diagnose_failure_mode(telemetry, ml_type, probability)
     anom_res = anomaly_detection.predict_anomaly(telemetry, anom_model, anom_path)
-    health_score = health_engine.compute_health_score(telemetry)
+    health_score = health_engine.compute_health_score(telemetry, probability=probability, anomaly_score=anom_res.get('anomaly_score', 0.0))
     shap_causes = shap_explainer.get_shap_causes(telemetry, top_n=5)
 
     risk = "HIGH" if probability >= 0.65 else "MEDIUM" if probability >= 0.30 else "LOW"

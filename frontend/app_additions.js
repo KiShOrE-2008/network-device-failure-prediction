@@ -159,14 +159,14 @@ async function loadTopologyMap() {
         const res = await fetch('/api/topology');
         const data = await res.json();
         if (data.success && data.nodes) {
-            renderTopologySVG(svg, data.nodes, data.links || []);
+            renderAdditionsTopologySVG(svg, data.nodes, data.links || []);
         }
     } catch (e) {
         console.warn('Topology fetch failed:', e);
     }
 }
 
-function renderTopologySVG(svg, nodes, links) {
+function renderAdditionsTopologySVG(svg, nodes, links) {
     const W = 800, H = 360;
     const coreX = 400, coreY = 60;
     
@@ -522,18 +522,24 @@ function scheduleWhatIf() {
 }
 
 (function patchUpdateUI() {
-    const _original = window.updateUIWithResults;
-    if (typeof _original === 'function') {
-        window.updateUIWithResults = function (data) {
-            _original(data);
-            if (typeof window._onPredictionResult === 'function') {
-                window._onPredictionResult(data);
-            }
-        };
-    } else {
-        setTimeout(patchUpdateUI, 200);
+    let retries = 0;
+    function tryPatch() {
+        if (typeof window.updateUIWithResults === 'function') {
+            const _original = window.updateUIWithResults;
+            window.updateUIWithResults = function (data) {
+                _original(data);
+                if (typeof window._onPredictionResult === 'function') {
+                    window._onPredictionResult(data);
+                }
+            };
+        } else if (retries++ < 15) {
+            setTimeout(tryPatch, 200);
+        }
     }
+    tryPatch();
 })();
+
+window.triggerWhatIf = triggerWhatIf;
 
 document.addEventListener('DOMContentLoaded', () => {
     window.initDashboardAdditions('manual');

@@ -343,6 +343,204 @@
           </div>
         </section>
 
+        <!-- View 6b: Diagnostics & What-If Simulator -->
+        <section id="view-diagnostics" class="content-view">
+          <div class="page-header">
+            <div>
+              <h1 class="page-title">Device Diagnostics & What-If Simulator</h1>
+              <p class="page-description">Real-time telemetry inference, root-cause diagnosis, anomaly scoring, and counterfactual simulation</p>
+            </div>
+            <div style="display:flex; gap:10px;">
+              <button id="whatif-toggle-btn" class="btn-noc" onclick="toggleWhatIfMode()">
+                <span class="icon">🧪</span> What-If Simulator
+              </button>
+              <button id="btn-run-diag" class="btn-noc primary" onclick="runDiagnosticsInference()">
+                <span>⚡ Run Live Diagnostics</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- What-If Live Delta Panel (hidden by default) -->
+          <div id="whatif-panel" class="noc-card" style="display:none; margin-bottom:20px; border-left:4px solid var(--accent-cyan); background:rgba(56, 189, 248, 0.05);">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <div style="font-weight:700; color:var(--accent-cyan); display:flex; align-items:center; gap:8px;">
+                <span>🧪 WHAT-IF COUNTERFACTUAL SIMULATION ACTIVE</span>
+              </div>
+              <span class="mono-text" style="font-size:11px; color:var(--text-muted);">Adjust any slider below for real-time risk recomputation</span>
+            </div>
+            <div class="grid-4" style="margin-bottom:0;">
+              <div style="background:var(--bg-dark); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">SIMULATED PROBABILITY</div>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <span id="wi-prob-val" class="mono-text" style="font-size:22px; font-weight:700; color:var(--color-critical);">--%</span>
+                  <span id="wi-delta-prob" class="mono-text" style="font-size:12px; font-weight:600;">--</span>
+                </div>
+              </div>
+              <div style="background:var(--bg-dark); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">SIMULATED HEALTH SCORE</div>
+                <div style="display:flex; align-items:baseline; gap:8px;">
+                  <span id="wi-health-val" class="mono-text" style="font-size:22px; font-weight:700; color:var(--color-medium);">--</span>
+                  <span id="wi-delta-health" class="mono-text" style="font-size:12px; font-weight:600;">--</span>
+                </div>
+              </div>
+              <div style="background:var(--bg-dark); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">SIMULATED RISK CATEGORY</div>
+                <span id="wi-risk-val" class="mono-text" style="font-size:18px; font-weight:700; color:var(--text-main);">--</span>
+              </div>
+              <div style="background:var(--bg-dark); padding:12px; border-radius:8px; border:1px solid var(--border-color);">
+                <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">ESTIMATED TIME TO FAILURE</div>
+                <span id="wi-window-val" class="mono-text" style="font-size:15px; font-weight:600; color:var(--accent-cyan);">--</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2">
+            <!-- Left: Telemetry Sliders and Controls -->
+            <div class="noc-card">
+              <div class="card-title" style="display:flex; justify-content:space-between; align-items:center;">
+                <span>Device Telemetry Inputs</span>
+                <div style="display:flex; gap:12px; align-items:center; font-size:12px; font-weight:normal;">
+                  <label><input type="radio" name="Device_Type" value="Router" checked onchange="onSliderChange()"> Router</label>
+                  <label><input type="radio" name="Device_Type" value="Switch" onchange="onSliderChange()"> Switch</label>
+                </div>
+              </div>
+
+              <div style="display:flex; flex-direction:column; gap:14px; margin-top:10px;">
+                <!-- CPU -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">CPU Utilization</label>
+                    <span id="val-cpu" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">92%</span>
+                  </div>
+                  <input type="range" id="cpu_usage" min="0" max="100" value="92" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('cpu', this.value, '%')">
+                </div>
+
+                <!-- Memory -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">Memory Utilization</label>
+                    <span id="val-memory" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">94%</span>
+                  </div>
+                  <input type="range" id="memory_usage" min="0" max="100" value="94" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('memory', this.value, '%')">
+                </div>
+
+                <!-- Temperature -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">Temperature (°C)</label>
+                    <span id="val-temperature" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">78°C</span>
+                  </div>
+                  <input type="range" id="temperature" min="20" max="130" value="78" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('temperature', this.value, '°C')">
+                </div>
+
+                <!-- Interface Errors -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">Interface Errors</label>
+                    <span id="val-errors" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">156</span>
+                  </div>
+                  <input type="range" id="interface_errors" min="0" max="500" value="156" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('errors', this.value, '')">
+                </div>
+
+                <!-- Packet Loss -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">Packet Loss (%)</label>
+                    <span id="val-loss" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">8.2%</span>
+                  </div>
+                  <input type="range" id="packet_loss" min="0" max="50" step="0.1" value="8.2" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('loss', this.value, '%')">
+                </div>
+
+                <!-- Bandwidth Usage -->
+                <div>
+                  <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
+                    <label style="font-size:12px; color:var(--text-muted);">Bandwidth Usage (%)</label>
+                    <span id="val-bandwidth" class="mono-text" style="font-size:12px; color:var(--accent-cyan);">95%</span>
+                  </div>
+                  <input type="range" id="bandwidth_usage" min="0" max="100" value="95" style="width:100%; accent-color:var(--accent-cyan);" oninput="updateSliderVal('bandwidth', this.value, '%')">
+                </div>
+
+                <!-- Uptime & Log Errors -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                  <div>
+                    <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">UPTIME (DAYS)</label>
+                    <input type="number" id="uptime" class="cmd-input" value="20" min="0" style="width:100%; padding:8px 10px; font-size:13px; border-radius:6px;" oninput="onSliderChange()">
+                  </div>
+                  <div>
+                    <label style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">LOG ERRORS COUNT</label>
+                    <input type="number" id="log_errors" class="cmd-input" value="20" min="0" style="width:100%; padding:8px 10px; font-size:13px; border-radius:6px;" oninput="onSliderChange()">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Right: Health Gauge & Diagnostics -->
+            <div style="display:flex; flex-direction:column; gap:16px;">
+              <!-- Health Gauge Card -->
+              <div class="noc-card">
+                <div class="card-title">Device Health Index & Risk Assessment</div>
+                <div style="display:flex; align-items:center; justify-content:space-around; padding:10px 0;">
+                  <!-- Circular SVG Health Score Arc -->
+                  <div style="position:relative; width:120px; height:120px; display:flex; align-items:center; justify-content:center;">
+                    <svg width="120" height="120" viewBox="0 0 100 100">
+                      <circle cx="50" cy="50" r="45" fill="none" stroke="var(--border-color)" stroke-width="8"/>
+                      <circle id="health-score-arc" cx="50" cy="50" r="45" fill="none" stroke="#22c55e" stroke-width="8"
+                              stroke-dasharray="282.7" stroke-dashoffset="56.5" stroke-linecap="round"
+                              transform="rotate(-90 50 50)" style="transition: stroke-dashoffset 0.6s ease, stroke 0.6s ease;"/>
+                    </svg>
+                    <div style="position:absolute; text-align:center;">
+                      <div id="health-score-value" class="mono-text" style="font-size:24px; font-weight:700; color:var(--color-low);">--</div>
+                      <div id="health-score-label" style="font-size:9px; font-weight:700; letter-spacing:0.5px; color:var(--color-low);">HEALTHY</div>
+                    </div>
+                  </div>
+
+                  <!-- Details -->
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <div>
+                      <span style="font-size:11px; color:var(--text-muted);">DIAGNOSED FAILURE MODE:</span>
+                      <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                        <span id="failure-type-display" class="mono-text" style="font-size:16px; font-weight:700; color:var(--accent-cyan);">--</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span style="font-size:11px; color:var(--text-muted);">ANOMALY INDEX:</span>
+                      <div style="display:flex; align-items:center; gap:8px; margin-top:2px;">
+                        <span id="anomaly-score-val" class="mono-text" style="font-size:14px; font-weight:700;">--%</span>
+                        <span id="anomaly-flag-badge" class="badge" style="font-size:10px; padding:2px 8px; border-radius:12px; font-weight:600;">--</span>
+                      </div>
+                    </div>
+                    <div>
+                      <span style="font-size:11px; color:var(--text-muted);">ESTIMATED WINDOW:</span>
+                      <div id="risk-window-text" class="mono-text" style="font-size:13px; color:var(--text-main); font-weight:600;">--</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:8px;">
+                  <div style="font-size:11px; color:var(--text-muted); margin-bottom:4px;">DIAGNOSTIC NARRATIVE</div>
+                  <p id="failure-desc-display" style="font-size:12px; color:var(--text-main); line-height:1.4;">--</p>
+                </div>
+              </div>
+
+              <!-- Primary Risk Drivers (SHAP Attribution) -->
+              <div class="noc-card">
+                <div class="card-title">Primary Risk Drivers (SHAP Feature Attribution)</div>
+                <div id="shap-bars-container" style="display:flex; flex-direction:column; gap:8px; padding-top:4px;">
+                  <p class="mono-text" style="font-size:12px; color:var(--text-muted);">Click "Run Live Diagnostics" to compute SHAP attributions.</p>
+                </div>
+              </div>
+
+              <!-- Recommended Maintenance Actions -->
+              <div class="noc-card">
+                <div class="card-title">Actionable Runbook Recommendations</div>
+                <ul id="intel-actions-list" style="padding-left:18px; margin-top:6px; display:flex; flex-direction:column; gap:6px; font-size:12px; color:var(--text-muted);">
+                  <li>No active recommendations.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- View 7: Analytics -->
         <section id="view-analytics" class="content-view">
           <div class="page-header">

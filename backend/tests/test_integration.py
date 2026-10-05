@@ -36,10 +36,11 @@ def test_full_pipeline_integration(tmp_path):
     Executes one complete end-to-end integration flow across all NetGuard NOC modules.
     """
     # 1. Dataset Generation & Preparation
-    timestamps = pd.date_range('2026-01-01', periods=30, freq='1h')
+    timestamps = pd.date_range('2026-01-01', periods=100, freq='1h')
     data = []
     for dev_id in ['DEV-0001', 'DEV-0002']:
         for ts in timestamps:
+            is_fail = ts in timestamps[[20, 50, 85]]
             data.append({
                 'Device_ID': dev_id,
                 'Hostname': f'host-{dev_id}',
@@ -60,8 +61,8 @@ def test_full_pipeline_integration(tmp_path):
                 'Uptime': 1000,
                 'Log_Errors': 2,
                 'Syslog_Critical_Count': 0,
-                'Failed': 1 if ts == timestamps[15] else 0,
-                'Failure_Type': 'THERMAL' if ts == timestamps[15] else 'NONE'
+                'Failed': 1 if is_fail else 0,
+                'Failure_Type': 'THERMAL' if is_fail else 'NONE'
             })
     df_raw = pd.DataFrame(data)
 
@@ -79,12 +80,12 @@ def test_full_pipeline_integration(tmp_path):
     df_raw.to_csv(sample_csv, index=False)
     
     # Train models on small dataset fast
-    train_all_models(data_path=sample_csv)
+    train_all_models(data_path=sample_csv, output_dir=str(models_dir))
 
-    assert os.path.exists("models/failure_model.pkl")
-    assert os.path.exists("models/diagnostic_model.pkl")
-    assert os.path.exists("models/anomaly_model.pkl")
-    assert os.path.exists("models/model_metadata.json")
+    assert os.path.exists(models_dir / "failure_model.pkl")
+    assert os.path.exists(models_dir / "diagnostic_model.pkl")
+    assert os.path.exists(models_dir / "anomaly_model.pkl")
+    assert os.path.exists(models_dir / "model_metadata.json")
 
     # 4. Model Reload & Fleet Prediction
     predictor = FleetPredictor()

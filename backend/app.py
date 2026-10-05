@@ -20,17 +20,21 @@ def main():
         print(f"⚠️ Virtual environment python not found at '{python_bin}'.")
         print("Falling back to the current python interpreter.")
         python_bin = sys.executable
+    else:
+        python_bin = os.path.abspath(python_bin)
 
     # Check if user wants to run the web server instead of the pipeline
+    backend_root = os.path.dirname(os.path.abspath(__file__))
     if len(sys.argv) > 1 and sys.argv[1] == "--web":
-        cmd = [python_bin, "src/web_app.py"]
+        web_app_script = os.path.join(backend_root, "src", "web_app.py")
+        cmd = [python_bin, web_app_script]
         print("=" * 60)
         print("STARTING THE NETWORK DEVICE DIAGNOSTICS WEB INTERFACE")
         print("=" * 60)
         print(f"\n[Running Web App] {' '.join(cmd)}")
         print("-" * 60)
         try:
-            subprocess.run(cmd)
+            subprocess.run(cmd, cwd=backend_root)
         except KeyboardInterrupt:
             print("\n🛑 Web app server stopped by user.")
         sys.exit(0)
@@ -38,10 +42,10 @@ def main():
     # Define the execution pipeline in order
     predict_args = sys.argv[1:]
     pipeline = [
-        ("src/generate_dataset.py", []),
-        ("src/eda.py", []),
-        ("src/train_model.py", []),
-        ("src/predict.py", predict_args)
+        (os.path.join(backend_root, "src", "generate_dataset.py"), []),
+        (os.path.join(backend_root, "src", "eda.py"), []),
+        (os.path.join(backend_root, "src", "train_model.py"), []),
+        (os.path.join(backend_root, "src", "predict.py"), predict_args)
     ]
 
     print("=" * 60)
@@ -56,7 +60,7 @@ def main():
         try:
             # Run the command, inheriting stdin, stdout, and stderr so live progress
             # is printed and the interactive prompts in predict.py work correctly.
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, cwd=backend_root, check=True)
         except subprocess.CalledProcessError as e:
             print(f"\n❌ Step failed: {script} returned non-zero exit code.")
             sys.exit(1)

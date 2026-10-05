@@ -71,6 +71,7 @@ def get_fleet_health():
 @fleet_bp.route("/api/fleet/predict", methods=["POST"])
 def trigger_batch_predict():
     """Triggers batch inference over all 500+ devices and persists prediction logs."""
+    FleetPredictor.clear_cache()
     predictions = predictor.predict_all()
     summary = predictor.get_fleet_summary(predictions)
 
