@@ -549,17 +549,52 @@
               <p class="page-description">Failure mode distributions, vendor health, and location statistics</p>
             </div>
           </div>
+
+          <!-- KPI Summary Row -->
+          <div class="grid-4" style="margin-bottom:20px;">
+            <div class="noc-card" style="text-align:center;">
+              <div class="card-title">Total Devices</div>
+              <div class="kpi-value" id="analytics-kpi-total" style="color:var(--accent-cyan);">—</div>
+            </div>
+            <div class="noc-card" style="text-align:center;">
+              <div class="card-title">Avg Health Score</div>
+              <div class="kpi-value" id="analytics-kpi-health" style="color:#22c55e;">—</div>
+            </div>
+            <div class="noc-card" style="text-align:center;">
+              <div class="card-title">Failure Modes Active</div>
+              <div class="kpi-value" id="analytics-kpi-modes" style="color:#f97316;">—</div>
+            </div>
+            <div class="noc-card" style="text-align:center;">
+              <div class="card-title">Avg Failure Probability</div>
+              <div class="kpi-value" id="analytics-kpi-prob" style="color:#eab308;">—</div>
+            </div>
+          </div>
+
+          <!-- Failure Mode + Device Type -->
           <div class="grid-2">
             <div class="noc-card">
               <div class="card-title">Failure Mode Distribution</div>
-              <div id="analytics-failure-types" style="padding:10px 0;"></div>
+              <div id="analytics-failure-types" style="padding:4px 0;"></div>
             </div>
             <div class="noc-card">
               <div class="card-title">Device Type Distribution</div>
-              <div id="analytics-device-types" style="padding:10px 0;"></div>
+              <div id="analytics-device-types" style="padding:4px 0;"></div>
+            </div>
+          </div>
+
+          <!-- Vendor + Location -->
+          <div class="grid-2">
+            <div class="noc-card">
+              <div class="card-title">Vendor Fleet Health</div>
+              <div id="analytics-vendor-health" style="padding:4px 0;"></div>
+            </div>
+            <div class="noc-card">
+              <div class="card-title">Location Overview</div>
+              <div id="analytics-location-overview" style="padding:4px 0;"></div>
             </div>
           </div>
         </section>
+
 
         <!-- View 8: Discovery -->
         <section id="view-discovery" class="content-view">

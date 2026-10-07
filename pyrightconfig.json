@@ -1,0 +1,16 @@
+{
+  "include": [
+    "backend",
+    "frontend"
+  ],
+  "extraPaths": [
+    "backend/src",
+    "backend/tests"
+  ],
+  "pythonVersion": "3.14",
+  "pythonPlatform": "Linux",
+  "venvPath": ".",
+  "venv": "venv",
+  "typeCheckingMode": "basic",
+  "reportMissingModuleSource": "none"
+}

@@ -1,13 +1,13 @@
 {
-  "training_timestamp": "2026-10-05T20:54:11.573717",
+  "training_timestamp": "2026-10-07T23:23:16.771128",
   "dataset_name": "netguard_noc_dataset_v1",
   "dataset_version": "v2.0",
-  "total_records": 200,
-  "total_devices": 2,
+  "total_records": 50000,
+  "total_devices": 500,
   "target": "Failure_Next_12h",
   "validation_strategy": "Deterministic Chronological 60/20/20 Split Per Device (Train / Validation / Held-Out Test)",
   "model_version": "3.0.0",
-  "selected_binary_model": "Logistic Regression",
+  "selected_binary_model": "XGBoost",
   "feature_schema": {
     "categorical_features": [
       "Device_Type"
@@ -70,39 +70,43 @@
     ]
   },
   "diagnostic_classes": [
-    "NONE"
+    "CONGESTION",
+    "HARDWARE",
+    "INTERFACE",
+    "MEMORY",
+    "THERMAL"
   ],
   "binary_classifier_validation_metrics": {
-    "Accuracy": 0.375,
-    "Precision": 0.0,
-    "Recall": 0.0,
-    "F1": 0.0,
-    "ROC-AUC": NaN,
+    "Accuracy": 0.98475,
+    "Precision": 0.9621559633027523,
+    "Recall": 0.9677047289504037,
+    "F1": 0.9649223691776884,
+    "ROC-AUC": 0.9979475840579374,
     "ConfusionMatrix": [
       [
-        6,
-        10
+        3100,
+        33
       ],
       [
-        0,
-        0
+        28,
+        839
       ]
     ]
   },
   "binary_classifier_test_metrics": {
-    "Accuracy": 0.3125,
-    "Precision": 0.0,
-    "Recall": 0.0,
-    "F1": 0.0,
-    "ROC-AUC": 0.35,
+    "Accuracy": 0.9995,
+    "Precision": 1.0,
+    "Recall": 0.9985029940119761,
+    "F1": 0.9992509363295881,
+    "ROC-AUC": 0.9999988761216306,
     "ConfusionMatrix": [
       [
-        5,
-        1
+        2664,
+        0
       ],
       [
-        10,
-        0
+        2,
+        1334
       ]
     ]
   },
@@ -112,7 +116,43 @@
     "precision": 1.0,
     "recall": 1.0,
     "weighted_f1": 1.0,
-    "confusion_matrix": []
+    "confusion_matrix": [
+      [
+        177,
+        0,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        196,
+        0,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        214,
+        0,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        239,
+        0
+      ],
+      [
+        0,
+        0,
+        0,
+        0,
+        230
+      ]
+    ]
   },
   "anomaly_detector": {
     "model_type": "Isolation Forest (150 estimators)",

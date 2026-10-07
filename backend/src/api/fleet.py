@@ -39,7 +39,10 @@ def get_fleet_stats():
         "network_health_score": summary["network_health_score"],
         "average_failure_probability": summary["average_failure_probability"],
         "predicted_failures_next_12h": summary["predicted_failures_next_12h"],
-        "failure_mode_breakdown": summary["failure_mode_breakdown"]
+        "failure_mode_breakdown": summary["failure_mode_breakdown"],
+        "device_type_breakdown": summary.get("device_type_breakdown", {}),
+        "vendor_breakdown": summary.get("vendor_breakdown", {}),
+        "location_breakdown": summary.get("location_breakdown", {})
     })
 
 

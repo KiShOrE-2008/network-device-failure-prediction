@@ -461,25 +461,106 @@ function loadAnomaliesData() {
 // -----------------------------------------------------------------------------
 // 7. Fleet Analytics View Loader
 // -----------------------------------------------------------------------------
+
+/** Renders a proportional horizontal-bar row list inside a container element. */
+function _renderBarRows(container, entries, colorFn) {
+  if (!container) return;
+  const total = entries.reduce((s, [, v]) => s + (v.count || v), 0) || 1;
+  container.innerHTML = entries.map(([label, v]) => {
+    const count = v.count !== undefined ? v.count : v;
+    const pct   = v.pct   !== undefined ? v.pct   : +((count / total) * 100).toFixed(1);
+    const health = v.avg_health !== undefined
+      ? `<span class="mono-text" style="font-size:11px; color:var(--text-muted); margin-left:8px;">⬆ ${v.avg_health}</span>`
+      : '';
+    const color = colorFn ? colorFn(label) : 'var(--accent-cyan)';
+    return `
+      <div style="margin-bottom:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+          <span style="font-size:12px; font-weight:600; color:var(--text-main);">${label}${health}</span>
+          <span class="mono-text" style="font-size:12px; color:${color}; font-weight:700;">${count} <span style="font-size:10px; color:var(--text-muted);">(${pct}%)</span></span>
+        </div>
+        <div style="background:var(--border-color); border-radius:4px; height:6px; overflow:hidden;">
+          <div style="width:${pct}%; background:${color}; height:100%; border-radius:4px; transition:width 0.6s ease;"></div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+const FAILURE_MODE_COLORS = {
+  THERMAL:    '#ef4444',
+  HARDWARE:   '#f97316',
+  INTERFACE:  '#eab308',
+  MEMORY:     '#a855f7',
+  CONGESTION: '#38bdf8',
+  NONE:       '#22c55e'
+};
+
+const VENDOR_COLORS = {
+  Cisco:   '#3b82f6',
+  Juniper: '#22c55e',
+  Arista:  '#f97316',
+};
+
+const LOCATION_COLORS = ['#38bdf8', '#a855f7', '#22c55e', '#f97316', '#eab308'];
+
 async function loadAnalyticsData() {
   try {
     const res = await fetch('/api/fleet/stats');
     const data = await res.json();
-    if (data.success) {
-      const modeBox = document.getElementById('analytics-failure-types');
-      if (modeBox) {
-        modeBox.innerHTML = Object.entries(data.failure_mode_breakdown).map(([mode, cnt]) => `
-          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid var(--border-color);">
-            <span>${mode}</span>
-            <span class="mono-text" style="font-weight:600; color:var(--accent-cyan);">${cnt} devices</span>
-          </div>
-        `).join('');
+    if (!data.success) return;
+
+    // ── KPI Strip ────────────────────────────────────────────────────────────
+    const kpiTotal  = document.getElementById('analytics-kpi-total');
+    const kpiHealth = document.getElementById('analytics-kpi-health');
+    const kpiModes  = document.getElementById('analytics-kpi-modes');
+    const kpiProb   = document.getElementById('analytics-kpi-prob');
+
+    if (kpiTotal)  kpiTotal.textContent  = data.total_devices ?? '—';
+    if (kpiHealth) kpiHealth.textContent = (data.network_health_score ?? '—') + (data.network_health_score != null ? '' : '');
+    if (kpiModes)  kpiModes.textContent  = Object.keys(data.failure_mode_breakdown || {}).length;
+    if (kpiProb)   kpiProb.textContent   = (data.average_failure_probability ?? 0).toFixed(1) + '%';
+
+    // ── Failure Mode Distribution ─────────────────────────────────────────────
+    const modeBox = document.getElementById('analytics-failure-types');
+    if (modeBox) {
+      const modeEntries = Object.entries(data.failure_mode_breakdown || {})
+        .sort((a, b) => b[1] - a[1]);
+      if (modeEntries.length === 0) {
+        modeBox.innerHTML = '<p style="color:var(--text-muted); font-size:12px; padding:8px 0;">No active failure modes detected.</p>';
+      } else {
+        _renderBarRows(modeBox, modeEntries, (lbl) => FAILURE_MODE_COLORS[lbl] || 'var(--accent-cyan)');
       }
     }
+
+    // ── Device Type Distribution ──────────────────────────────────────────────
+    const devTypeBox = document.getElementById('analytics-device-types');
+    if (devTypeBox) {
+      const dtEntries = Object.entries(data.device_type_breakdown || {})
+        .sort((a, b) => b[1].count - a[1].count);
+      _renderBarRows(devTypeBox, dtEntries, () => 'var(--accent-blue)');
+    }
+
+    // ── Vendor Fleet Health ───────────────────────────────────────────────────
+    const vendorBox = document.getElementById('analytics-vendor-health');
+    if (vendorBox) {
+      const vEntries = Object.entries(data.vendor_breakdown || {})
+        .sort((a, b) => b[1].count - a[1].count);
+      _renderBarRows(vendorBox, vEntries, (lbl) => VENDOR_COLORS[lbl] || 'var(--accent-cyan)');
+    }
+
+    // ── Location Overview ─────────────────────────────────────────────────────
+    const locBox = document.getElementById('analytics-location-overview');
+    if (locBox) {
+      const locEntries = Object.entries(data.location_breakdown || {})
+        .sort((a, b) => b[1].count - a[1].count);
+      _renderBarRows(locBox, locEntries, (_, idx) => LOCATION_COLORS[idx % LOCATION_COLORS.length]);
+    }
+
   } catch (err) {
     console.error('Failed to load analytics stats:', err);
   }
 }
+
 
 // -----------------------------------------------------------------------------
 // 8. Discovery Subnet Scanner Loader

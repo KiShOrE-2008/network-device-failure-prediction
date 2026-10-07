@@ -224,11 +224,63 @@ class FleetPredictor:
 
         network_health = compute_fleet_health_score(health_scores, probabilities if probabilities else [0.0])
 
-        mode_counts = {}
+        # Failure mode breakdown — count across ALL devices (not just high-risk)
+        mode_counts: Dict[str, int] = {}
         for p in predictions:
-            if p["risk"] in ["HIGH", "CRITICAL"]:
-                m = p["predicted_failure"]
+            m = p["predicted_failure"]
+            if m and m != "NONE":
                 mode_counts[m] = mode_counts.get(m, 0) + 1
+
+        # Device type breakdown
+        device_type_breakdown: Dict[str, Dict[str, Any]] = {}
+        for p in predictions:
+            dt = p.get("device_type", "Unknown")
+            if dt not in device_type_breakdown:
+                device_type_breakdown[dt] = {"count": 0, "health_sum": 0.0}
+            device_type_breakdown[dt]["count"] += 1
+            device_type_breakdown[dt]["health_sum"] += p["health_score"]
+        device_type_stats = {
+            dt: {
+                "count": v["count"],
+                "pct": round(v["count"] / total * 100, 1) if total else 0,
+                "avg_health": round(v["health_sum"] / v["count"], 1) if v["count"] else 0
+            }
+            for dt, v in device_type_breakdown.items()
+        }
+
+        # Vendor breakdown
+        vendor_breakdown: Dict[str, Dict[str, Any]] = {}
+        for p in predictions:
+            v = p.get("vendor", "Unknown")
+            if v not in vendor_breakdown:
+                vendor_breakdown[v] = {"count": 0, "health_sum": 0.0}
+            vendor_breakdown[v]["count"] += 1
+            vendor_breakdown[v]["health_sum"] += p["health_score"]
+        vendor_stats = {
+            v: {
+                "count": d["count"],
+                "pct": round(d["count"] / total * 100, 1) if total else 0,
+                "avg_health": round(d["health_sum"] / d["count"], 1) if d["count"] else 0
+            }
+            for v, d in vendor_breakdown.items()
+        }
+
+        # Location breakdown
+        location_breakdown: Dict[str, Dict[str, Any]] = {}
+        for p in predictions:
+            loc = p.get("location", "Unknown")
+            if loc not in location_breakdown:
+                location_breakdown[loc] = {"count": 0, "health_sum": 0.0}
+            location_breakdown[loc]["count"] += 1
+            location_breakdown[loc]["health_sum"] += p["health_score"]
+        location_stats = {
+            loc: {
+                "count": d["count"],
+                "pct": round(d["count"] / total * 100, 1) if total else 0,
+                "avg_health": round(d["health_sum"] / d["count"], 1) if d["count"] else 0
+            }
+            for loc, d in location_breakdown.items()
+        }
 
         return {
             "total_devices": total,
@@ -242,6 +294,9 @@ class FleetPredictor:
             "average_failure_probability": round(float(np.mean(probabilities)) * 100, 1) if probabilities else 0.0,
             "predicted_failures_next_12h": critical + high,
             "failure_mode_breakdown": mode_counts,
+            "device_type_breakdown": device_type_stats,
+            "vendor_breakdown": vendor_stats,
+            "location_breakdown": location_stats,
             "timestamp": pd.Timestamp.now().isoformat()
         }
 

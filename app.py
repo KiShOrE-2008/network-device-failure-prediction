@@ -6,13 +6,12 @@ def main():
     root_dir = os.path.dirname(os.path.abspath(__file__))
     backend_dir = os.path.join(root_dir, "backend")
     
-    if os.name == "nt":
-        python_bin = os.path.join(root_dir, "venv", "Scripts", "python.exe")
-    else:
-        python_bin = os.path.join(root_dir, "venv", "bin", "python")
-
-    if not os.path.exists(python_bin):
-        python_bin = sys.executable
+    venv_subpath = os.path.join("Scripts", "python.exe") if os.name == "nt" else os.path.join("bin", "python")
+    candidates = [
+        os.path.join(root_dir, "venv", venv_subpath),
+        os.path.join(root_dir, ".venv", venv_subpath),
+    ]
+    python_bin = next((c for c in candidates if os.path.exists(c)), sys.executable)
 
     backend_app = os.path.join(backend_dir, "app.py")
     cmd = [python_bin, backend_app] + sys.argv[1:]
